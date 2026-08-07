@@ -220,31 +220,54 @@ export function RadioPanel() {
     setRadioProbe({ lat: p.lat, lng: p.lng, label: uName.trim() || '現場單位' })
   }
 
-  // 算地形：傳 id 只算單站（點站台看它的真實覆蓋），不傳算全部
+  // 算地形：傳 id 只算單站（點站台看它的真實覆蓋），不傳算全部。
+  // 逐站各自 try/catch → 部分失敗也保留已成功的（不再一station失敗就全毀）；
+  // 站與站之間留 300ms 間隔，降低對免費高程 API 的瞬間請求密度（避免限流失敗）。
   const computeTerrain = async (onlyId?: string) => {
     const targets = onlyId ? list.filter((r) => r.id === onlyId) : list
     if (!targets.length || terrainBusy) return
     setTerrainBusy(true)
     setStatus(onlyId ? '地形遮蔽：查詢此站高程中…' : '地形遮蔽：查詢高程中…（依台數需數秒）')
-    try {
-      for (const r of targets) {
-        const ring = await terrainCoverage({
-          lat: r.lat,
-          lng: r.lng,
-          antennaM: r.antennaM,
-          targetM: r.rxM,
-          maxKm: coverage(r).km,
-          kFactor: r.kFactor,
-        })
-        if (ring.length >= 3) setTerrainRing(r.id, ring)
+    let ok = 0
+    const failed: string[] = []
+    for (let i = 0; i < targets.length; i++) {
+      const r = targets[i]
+      if (i > 0) await new Promise((res) => setTimeout(res, 300))
+      // 每站最多試 2 次（限流多為短暫）
+      let done = false
+      for (let attempt = 0; attempt < 2 && !done; attempt++) {
+        if (attempt > 0) await new Promise((res) => setTimeout(res, 800))
+        try {
+          const ring = await terrainCoverage({
+            lat: r.lat,
+            lng: r.lng,
+            antennaM: r.antennaM,
+            targetM: r.rxM,
+            maxKm: coverage(r).km,
+            kFactor: r.kFactor,
+          })
+          if (ring.length >= 3) {
+            setTerrainRing(r.id, ring)
+            ok++
+          }
+          done = true
+        } catch {
+          if (attempt >= 1) failed.push(r.name)
+        }
       }
+      setStatus(`地形遮蔽：已完成 ${ok}/${targets.length} 站…`)
+    }
+    setTerrainBusy(false)
+    if (ok > 0) {
       setShowTerrain(true)
-      setStatus('地形遮蔽覆蓋：已依 90m 地形切出真實覆蓋形狀')
-    } catch {
-      setStatus('⚠ 地形高程取得失敗（需連網）；維持圓圈估算')
-      alert('地形高程取得失敗，請確認網路。維持原本圓圈估算。')
-    } finally {
-      setTerrainBusy(false)
+      setStatus(
+        failed.length
+          ? `⚠ 地形遮蔽：${ok} 站完成，${failed.length} 站失敗（${failed.join('、')}）；失敗站維持圓圈，可再按一次補算`
+          : '地形遮蔽覆蓋：已依 90m 地形切出真實覆蓋形狀（含山後死角）',
+      )
+    } else {
+      setStatus('⚠ 地形高程取得失敗（需連網／稍後再試）；維持圓圈估算')
+      alert('地形高程取得失敗，可能是網路或高程服務暫時限流。稍等幾秒再按一次「計算地形遮蔽覆蓋」即可，通常就會成功。')
     }
   }
 

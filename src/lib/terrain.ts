@@ -99,13 +99,14 @@ export async function terrainCoverage(inp: TerrainInput, opts: TerrainOpts = {})
   const { lat, lng, antennaM, targetM, maxKm } = inp
   const k = inp.kFactor ?? 4 / 3
   if (!(maxKm > 0)) return []
-  // 取樣密度（約 ~580 點 / 6 批請求，elevationBatch 會分批+退避重試）：
-  //   • 方位 36 條（每 10°）：角解析度是抓「放射狀窄谷」盲區的關鍵——太疏會把
-  //     山谷縫隙在相鄰射線間平滑掉，死角就漏標。
-  //   • 沿線 ≤16 段：徑向解析度用來抓「細稜線」遮蔽。
-  const bearings = opts.bearings ?? 36
-  const stepKm = opts.stepKm ?? Math.min(2.5, Math.max(0.4, maxKm / 16))
-  const steps = Math.max(3, Math.min(16, Math.ceil(maxKm / stepKm)))
+  // 取樣密度（約 ~240 點 / 3 批請求/站，elevationBatch 分批+退避重試）：
+  //   • 方位 24 條（每 15°）：角解析度抓「放射狀窄谷」盲區。
+  //   • 沿線步數固定、stepKm = maxKm/steps → 一定取樣到「完整涵蓋距離」。
+  //     ⚠ 千萬不要把 stepKm 設上限（如 2.5km），否則長程站（如山頂台 240km）
+  //       會被硬切成 steps×stepKm 的小範圍——這是 v2.30 的退化，已修正。
+  const bearings = opts.bearings ?? 24
+  const stepKm = opts.stepKm ?? Math.max(0.3, maxKm / 10)
+  const steps = Math.max(4, Math.min(14, Math.round(maxKm / stepKm)))
 
   // 取樣點：第 0 個是站台本身，其後每方位 steps 個
   const pts: [number, number][] = [[lat, lng]]
@@ -117,7 +118,11 @@ export async function terrainCoverage(inp: TerrainInput, opts: TerrainOpts = {})
   }
 
   const elevs = await elevationBatch(pts)
-  const H0 = elevs[0] + antennaM // 天線頂（海拔）
+  // 天線頂海拔：取「站點地面高程」與「使用者填的天線高」兩者較大者（+3m 桅桿）。
+  // 這樣不論使用者把欄位當「山頂海拔」（如小雪山 3020m）或「離地桅桿高」都不會
+  // 重複相加（避免 2900m 地形又加 3020m → 6000m 的過度樂觀，山後陰影才算得對）。
+  const siteElev = elevs[0]
+  const H0 = Math.max(siteElev, antennaM) + 3
 
   const ring: [number, number][] = []
   let p = 1
