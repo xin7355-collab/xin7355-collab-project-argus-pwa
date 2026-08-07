@@ -28,8 +28,9 @@ export function RadioLayer({ map }: { map: L.Map }) {
     groupRef.current = g
 
     // 通訊死角：多台覆蓋聯集後仍收不到的網格（鋪在最底層，涵蓋圈畫其上）
+    // 開啟地形時用「被山切出的真實形狀」判定，故山後（圓內卻遮蔽）也會標為死角。
     if (showGap && repeaters.length) {
-      const dz = deadZones(repeaters)
+      const dz = deadZones(repeaters, { rings: terrainRings, useTerrain: showTerrain })
       const hLat = dz.dLat / 2
       const hLng = dz.dLng / 2
       for (const [lat, lng] of dz.cells) {
@@ -41,6 +42,7 @@ export function RadioLayer({ map }: { map: L.Map }) {
           { stroke: false, fillColor: '#f43f5e', fillOpacity: 0.22, interactive: false },
         ).addTo(g)
       }
+      useTacticalStore.getState().setRadioGapTerrain(dz.terrainUsed)
     }
 
     for (const r of repeaters) {
