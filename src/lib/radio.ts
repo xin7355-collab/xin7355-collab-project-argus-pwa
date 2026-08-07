@@ -144,15 +144,52 @@ export interface DeadZones {
   dLng: number
   /** 檢查總格數（供顯示涵蓋率）。 */
   total: number
+  /** 是否採用「地形遮蔽」判定（至少一台用了地形多邊形）。 */
+  terrainUsed: boolean
+}
+
+/** 點是否在多邊形內（射線法；ring 為 [lat,lng] 序列）。 */
+export function pointInPolygon(lat: number, lng: number, ring: [number, number][]): boolean {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const yi = ring[i][0]
+    const xi = ring[i][1]
+    const yj = ring[j][0]
+    const xj = ring[j][1]
+    const hit = yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi + 1e-12) + xi
+    if (hit) inside = !inside
+  }
+  return inside
+}
+
+export interface DeadZoneOpts {
+  /** 各台「地形遮蔽覆蓋多邊形」（terrainCoverage 結果），有才會納入山後遮蔽。 */
+  rings?: Record<string, [number, number][]>
+  /** 是否採用地形多邊形（對應 UI 的「地形/圓圈」切換）。 */
+  useTerrain?: boolean
+  gridN?: number
 }
 
 /**
- * 死角標示：在所有中繼台外擴一圈的範圍內鋪網格，逐格檢查是否被「任一」台的
- * 涵蓋圈涵蓋（聯集）；沒被涵蓋的格＝通訊死角。用於一眼看出站與站之間的縫。
+ * 死角標示：在所有中繼台外擴一圈的範圍內鋪網格，逐格檢查是否被「任一」台涵蓋（聯集），
+ * 沒被涵蓋的格＝通訊死角。
+ *
+ * 覆蓋判定分兩種：
+ *   • 有地形多邊形且開啟地形 → 用「被山切出的真實形狀」做點在多邊形內判定，
+ *     故「涵蓋圈半徑內、但在山後」的格會正確標為死角（符合實地量測）。
+ *   • 否則退回視距圓：距離 ≤ 涵蓋半徑即算涵蓋（樂觀，會低估山後死角）。
  */
-export function deadZones(list: Repeater[], gridN = 44): DeadZones {
-  if (!list.length) return { cells: [], dLat: 0, dLng: 0, total: 0 }
-  const covs = list.map((r) => ({ r, km: coverage(r).km }))
+export function deadZones(list: Repeater[], opts: DeadZoneOpts = {}): DeadZones {
+  const { rings, useTerrain = false, gridN = 44 } = opts
+  if (!list.length) return { cells: [], dLat: 0, dLng: 0, total: 0, terrainUsed: false }
+  let terrainUsed = false
+  const covs = list.map((r) => {
+    const km = coverage(r).km
+    const ring = useTerrain ? rings?.[r.id] : undefined
+    const poly = ring && ring.length >= 3 ? ring : null
+    if (poly) terrainUsed = true
+    return { r, km, poly }
+  })
   let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity, maxKm = 0
   for (const c of covs) {
     maxKm = Math.max(maxKm, c.km)
@@ -172,11 +209,15 @@ export function deadZones(list: Repeater[], gridN = 44): DeadZones {
     for (let j = 0; j < gridN; j++) {
       const lat = minLat + (i + 0.5) * dLat
       const lng = minLng + (j + 0.5) * dLng
-      const covered = covs.some((c) => distanceMeters(c.r.lat, c.r.lng, lat, lng) <= c.km * 1000)
+      const covered = covs.some((c) =>
+        c.poly
+          ? pointInPolygon(lat, lng, c.poly)
+          : distanceMeters(c.r.lat, c.r.lng, lat, lng) <= c.km * 1000,
+      )
       if (!covered) cells.push([lat, lng])
     }
   }
-  return { cells, dLat, dLng, total: gridN * gridN }
+  return { cells, dLat, dLng, total: gridN * gridN, terrainUsed }
 }
 
 // ── 測距 / 方位 / 數位鏈路研判 ──────────────────────────────

@@ -54,6 +54,8 @@ export function RadioPanel() {
   const setShowGap = useTacticalStore((s) => s.setShowRadioGap)
   const showTerrain = useTacticalStore((s) => s.showTerrain)
   const setShowTerrain = useTacticalStore((s) => s.setShowTerrain)
+  const terrainRings = useTacticalStore((s) => s.terrainRings)
+  const radioGapTerrain = useTacticalStore((s) => s.radioGapTerrain)
   const terrainBusy = useTacticalStore((s) => s.terrainBusy)
   const setTerrainBusy = useTacticalStore((s) => s.setTerrainBusy)
   const setTerrainRing = useTacticalStore((s) => s.setTerrainRing)
@@ -640,9 +642,33 @@ export function RadioPanel() {
                   </div>
                 </div>
                 {showGap && (
-                  <p className="rounded border border-rose-400/40 bg-rose-400/5 px-2 py-1 text-[0.5625rem] text-rose-200">
-                    🔴 紅色網格＝所有中繼台<b>聯集後仍收不到</b>的死角海域，站與站之間的縫一目了然。
-                  </p>
+                  <div className="flex flex-col gap-1 rounded border border-rose-400/40 bg-rose-400/5 px-2 py-1.5 text-[0.5625rem] text-rose-200">
+                    <span>🔴 紅色網格＝所有中繼台<b>聯集後仍收不到</b>的死角，站與站之間的縫一目了然。</span>
+                    {radioGapTerrain ? (
+                      <span className="text-emerald-300">
+                        ✅ <b>已含地形遮蔽</b>：連「涵蓋圈半徑內、但被山擋住」的山後死角也一起標出來了（90m 地形視線）。
+                      </span>
+                    ) : (
+                      <>
+                        <span className="text-amber-300">
+                          ⚠ 目前<b>只用視距圓估算</b>，山後的死角<b>沒算進來</b>（所以你只看到最外圍那圈）。實地會有的山後盲區要先算地形：
+                        </span>
+                        <button
+                          onClick={async () => {
+                            setShowTerrain(true)
+                            await computeTerrain()
+                          }}
+                          disabled={terrainBusy}
+                          className="mt-0.5 rounded border border-amber-500/60 bg-amber-500/15 py-1.5 text-[0.625rem] font-bold text-amber-200 active:scale-95 disabled:opacity-50"
+                        >
+                          {terrainBusy ? '⏳ 計算地形中…' : '🏔️ 一鍵：算地形＋標出山後死角'}
+                        </button>
+                        {Object.keys(terrainRings).length > 0 && !showTerrain && (
+                          <span>（已算過地形，按上方切到「地形」即可套用）</span>
+                        )}
+                      </>
+                    )}
+                  </div>
                 )}
                 {radioEdit && (
                   <p className="rounded border border-amber-400/40 bg-amber-400/5 px-2 py-1 text-[0.5625rem] text-amber-200">

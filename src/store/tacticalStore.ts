@@ -190,6 +190,8 @@ interface TacticalState {
   radarEditingId: string | null
   /** 通訊死角標示：多台覆蓋聯集後仍收不到的網格反白。 */
   showRadioGap: boolean
+  /** 目前死角是否已納入地形遮蔽（true=含山後死角；false=僅視距圓估算）。 */
+  radioGapTerrain: boolean
   /** 現場單位定位（數位回傳座標）：測距＋鏈路研判用。 */
   radioProbe: { lat: number; lng: number; label: string } | null
   /** 地形遮蔽覆蓋多邊形（key=中繼台 id）。 */
@@ -358,6 +360,7 @@ interface TacticalState {
   setRadioEditingId: (id: string | null) => void
   setRadarEditingId: (id: string | null) => void
   setShowRadioGap: (v: boolean) => void
+  setRadioGapTerrain: (v: boolean) => void
   setShowTerrain: (v: boolean) => void
   setTerrainBusy: (v: boolean) => void
   setTerrainRing: (id: string, ring: [number, number][]) => void
@@ -513,6 +516,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   radioEditingId: null,
   radarEditingId: null,
   showRadioGap: false,
+  radioGapTerrain: false,
   radioProbe: null,
   terrainRings: {},
   showTerrain: false,
@@ -752,6 +756,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   setRadioEditingId: (id) => set({ radioEditingId: id }),
   setRadarEditingId: (id) => set({ radarEditingId: id }),
   setShowRadioGap: (v) => set({ showRadioGap: v }),
+  setRadioGapTerrain: (v) => set({ radioGapTerrain: v }),
   setShowTerrain: (v) => set({ showTerrain: v }),
   setTerrainBusy: (v) => set({ terrainBusy: v }),
   setTerrainRing: (id, ring) => set((st) => ({ terrainRings: { ...st.terrainRings, [id]: ring } })),
