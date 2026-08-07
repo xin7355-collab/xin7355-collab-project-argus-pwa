@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import { useTacticalStore } from '../store/tacticalStore'
 import { coverage, repeaterColor, linkStatus, linkColor, windFarmsOnPath, deadZones } from '../lib/radio'
+import { elevation } from '../lib/elevation'
 import { WIND_FARMS } from '../lib/maritimeRef'
 
 /**
@@ -85,6 +86,10 @@ export function RadioLayer({ map }: { map: L.Map }) {
         marker.on('dragend', (e) => {
           const ll = (e.target as L.Marker).getLatLng()
           updateRepeater(r.id, { lat: ll.lat, lng: ll.lng })
+          // 位置變了 → 重查該點地面高程，天線頂高/覆蓋才會跟著更新（查不到就清掉舊值）
+          elevation(ll.lat, ll.lng)
+            .then((el) => updateRepeater(r.id, { siteElevM: Number.isFinite(el as number) ? (el as number) : undefined }))
+            .catch(() => {})
         })
       }
       // 點記號 → 開面板並帶入此站編輯（看覆蓋/改參數/算此站地形）

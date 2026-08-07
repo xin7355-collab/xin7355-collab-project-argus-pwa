@@ -115,3 +115,85 @@ export function extrapolateTrack(track: TyphoonPoint[]): TyphoonPoint[] {
     estimated: true,
   }))
 }
+
+/** 兩點大圓距離（km）。 */
+function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const dLat = (bLat - aLat) * DEG
+  const dLng = (bLng - aLng) * DEG
+  const s =
+    Math.sin(dLat / 2) ** 2 + Math.cos(aLat * DEG) * Math.cos(bLat * DEG) * Math.sin(dLng / 2) ** 2
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(s)))
+}
+
+/** 影響時窗研判結果（相對「現在」的小時）。 */
+export interface ImpactWindow {
+  /** 參考點目前是否在七級暴風圈內。 */
+  affectedNow: boolean
+  /** 目前距颱風中心(km)。 */
+  distNowKm: number
+  /** 目前七級暴風半徑(km)。 */
+  galeNowKm: number
+  /** 預估「進入」暴風圈的時刻（小時，相對現在）；不適用時 null。 */
+  enterHours: number | null
+  /** 預估「脫離／解除」暴風圈的時刻（小時，相對現在）；預報期內未脫離時 null。 */
+  exitHours: number | null
+  /** 是否採用「簡易外推」估計（非官方預報）。 */
+  estimated: boolean
+  /** 可用預報的最遠時數（超過此值的研判無資料）。 */
+  horizonHours: number
+}
+
+/**
+ * 依颱風「預報路徑」研判參考點（我方位置/畫面中心）何時進入、何時脫離七級暴風圈。
+ * 沿相鄰預報點以每小時線性內插中心位置與暴風半徑，找出 inside↔outside 的跨越時刻。
+ * 優先用官方未來點（hours>0）；若無則用簡易外推 estTrack（標記 estimated）。
+ */
+export function impactWindow(ty: Typhoon, ref: { lat: number; lng: number }): ImpactWindow | null {
+  const now = currentPoint(ty)
+  const official = ty.track.filter((p) => p.hours > 0.01).sort((a, b) => a.hours - b.hours)
+  let estimated = false
+  let seq: TyphoonPoint[]
+  if (official.length >= 1) {
+    seq = [now, ...official].sort((a, b) => a.hours - b.hours)
+  } else if (ty.estTrack && ty.estTrack.length) {
+    seq = [now, ...ty.estTrack].sort((a, b) => a.hours - b.hours)
+    estimated = true
+  } else {
+    return null // 沒有任何未來資訊，無從研判脫離時間
+  }
+
+  const distNowKm = haversineKm(ref.lat, ref.lng, now.lat, now.lng)
+  const galeNowKm = now.galeRadiusKm
+  const affectedNow = distNowKm <= galeNowKm
+
+  const horizonHours = seq[seq.length - 1].hours
+  // 每小時取樣（線性內插中心與暴風半徑），標記是否在圈內
+  const insideAt = (h: number): boolean => {
+    // 找 h 落在哪一段
+    let i = 0
+    while (i < seq.length - 1 && seq[i + 1].hours < h) i++
+    const a = seq[Math.min(i, seq.length - 1)]
+    const b = seq[Math.min(i + 1, seq.length - 1)]
+    const span = b.hours - a.hours
+    const t = span > 0 ? (h - a.hours) / span : 0
+    const lat = a.lat + (b.lat - a.lat) * t
+    const lng = a.lng + (b.lng - a.lng) * t
+    const gale = a.galeRadiusKm + (b.galeRadiusKm - a.galeRadiusKm) * t
+    return haversineKm(ref.lat, ref.lng, lat, lng) <= gale
+  }
+
+  let enterHours: number | null = null
+  let exitHours: number | null = null
+  let prevInside = affectedNow
+  for (let h = 1; h <= horizonHours; h++) {
+    const ins = insideAt(h)
+    if (!prevInside && ins && enterHours === null) enterHours = h
+    if (prevInside && !ins) {
+      exitHours = h
+      // 只要脫離就記錄「最後一次脫離」——覆蓋前面的暫時脫離，取最終離開時刻
+    }
+    prevInside = ins
+  }
+  // 若目前在圈內、但取樣期間從未脫離 → exitHours 維持 null（預報期內未脫離）
+  return { affectedNow, distNowKm, galeNowKm, enterHours, exitHours, estimated, horizonHours }
+}

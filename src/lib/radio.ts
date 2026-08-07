@@ -34,6 +34,19 @@ export interface Repeater {
   mobileGainDbi?: number
   /** 上行：站台接收靈敏度(dBm)。站台有前級/好天線，通常優於手持。預設 -116。 */
   stationRxSensDbm?: number
+  /** 站點地面高程(m，海拔)：由座標自動查 DEM 帶入；天線頂高＝地面高程＋天線高。 */
+  siteElevM?: number
+}
+
+/**
+ * 天線頂「海拔高」(m)：一般鐵塔高直接加在站點地面高程上（座標自動查得的 DEM）。
+ * 但若使用者把「天線高」欄位當成山頂海拔填了很大的值（>300m），則視為絕對海拔、
+ * 不再重複加地面（避免「山頂 2900m 又加 3020m→6000m」的過度樂觀）。
+ * → 使用者只要填鐵塔/天線離地高，山頂站也會自動算到正確的大範圍。
+ */
+export function antennaTopM(groundElevM: number, antennaM: number): number {
+  const g = Number.isFinite(groundElevM) ? groundElevM : 0
+  return antennaM > 300 ? Math.max(g, antennaM) : g + antennaM
 }
 
 /** 建立時的預設進階參數（一般使用者不用動）。 */
@@ -105,7 +118,8 @@ export interface Coverage {
 }
 
 export function coverage(r: Repeater): Coverage {
-  const losKm = radioHorizonKm(r.antennaM, r.rxM, r.kFactor)
+  // 天線頂等效海拔＝站點地面高程（座標自動查）＋天線高；山頂站因此自動有大範圍。
+  const losKm = radioHorizonKm(antennaTopM(r.siteElevM ?? 0, r.antennaM), r.rxM, r.kFactor)
   const powerKm = powerLimitedKm(r)
   return {
     km: Math.min(losKm, powerKm),
@@ -342,7 +356,7 @@ export function linkStatus(r: Repeater, lat: number, lng: number): LinkStatus {
   const upRxAtStation = upEirp - pl + r.txGainDbi // 站台天線增益（收發互易）
   const upMarginDb = upRxAtStation - staSens
 
-  const withinLos = dKm <= radioHorizonKm(r.antennaM, r.rxM, r.kFactor)
+  const withinLos = dKm <= radioHorizonKm(antennaTopM(r.siteElevM ?? 0, r.antennaM), r.rxM, r.kFactor)
   const downOk = withinLos && downMarginDb > 0
   const upOk = withinLos && upMarginDb > 0
   const marginDb = Math.min(downMarginDb, upMarginDb)
@@ -415,6 +429,7 @@ function normalizeRepeater(r: Partial<Repeater>): Repeater {
     mobilePowerW: n(r.mobilePowerW, RADIO_DEFAULTS.mobilePowerW),
     mobileGainDbi: n(r.mobileGainDbi, RADIO_DEFAULTS.mobileGainDbi),
     stationRxSensDbm: n(r.stationRxSensDbm, RADIO_DEFAULTS.stationRxSensDbm),
+    siteElevM: typeof r.siteElevM === 'number' && Number.isFinite(r.siteElevM) ? r.siteElevM : undefined,
   }
 }
 
@@ -476,6 +491,7 @@ export function parseRepeatersJson(text: string): Omit<Repeater, 'id'>[] | null 
         mobilePowerW: Number(r.mobilePowerW ?? RADIO_DEFAULTS.mobilePowerW),
         mobileGainDbi: Number(r.mobileGainDbi ?? RADIO_DEFAULTS.mobileGainDbi),
         stationRxSensDbm: Number(r.stationRxSensDbm ?? RADIO_DEFAULTS.stationRxSensDbm),
+        siteElevM: typeof r.siteElevM === 'number' && Number.isFinite(r.siteElevM) ? r.siteElevM : undefined,
       })
     }
     return out
