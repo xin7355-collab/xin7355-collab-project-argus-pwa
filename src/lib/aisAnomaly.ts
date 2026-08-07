@@ -90,3 +90,47 @@ export function analyzeVessel(v: Vessel): VesselAnalysis {
 export function analyzeVessels(vessels: Vessel[]): VesselAnalysis[] {
   return vessels.map(analyzeVessel)
 }
+
+// ── 趨近我方研判（CPA / TCPA，假設我方定點觀測）────────────────
+export interface ApproachInfo {
+  vessel: Vessel
+  /** 目前距我方（浬）。 */
+  distNm: number
+  /** 最近接近距離 CPA（浬）。 */
+  cpaNm: number
+  /** 到最近接近點的時間 TCPA（分鐘，≥0）。 */
+  tcpaMin: number
+}
+
+/**
+ * 找出「正朝我方趨近、且會近距離通過」的船（碰撞/接觸預警）。
+ * 以我方定點、目標維持現航向航速計算 CPA/TCPA；只回會靠近到 dangerCpaNm 內、
+ * 且在 horizonMin 分鐘內、目前 maxDistNm 浬內者，風險高（CPA 小、TCPA 小）排前。
+ */
+export function analyzeApproach(
+  vessels: Vessel[],
+  own: { lat: number; lng: number },
+  opts: { maxDistNm?: number; dangerCpaNm?: number; horizonMin?: number } = {},
+): ApproachInfo[] {
+  const { maxDistNm = 24, dangerCpaNm = 2, horizonMin = 90 } = opts
+  const cosLat = Math.cos(own.lat * DEG) || 1e-6
+  const out: ApproachInfo[] = []
+  for (const v of vessels) {
+    const ex = (v.lng - own.lng) * 60 * cosLat // 東向浬
+    const ny = (v.lat - own.lat) * 60 // 北向浬
+    const dist = Math.hypot(ex, ny)
+    if (dist > maxDistNm) continue
+    const vex = v.sog * Math.sin(v.cog * DEG)
+    const vny = v.sog * Math.cos(v.cog * DEG)
+    const speed2 = vex * vex + vny * vny
+    if (speed2 < 0.01) continue // 幾乎靜止：不算趨近
+    const tStar = -((ex * vex + ny * vny) / speed2) // 小時
+    if (tStar <= 0) continue // 正在遠離
+    const cpa = Math.hypot(ex + vex * tStar, ny + vny * tStar)
+    const tcpaMin = tStar * 60
+    if (cpa <= dangerCpaNm && tcpaMin <= horizonMin) {
+      out.push({ vessel: v, distNm: dist, cpaNm: cpa, tcpaMin })
+    }
+  }
+  return out.sort((a, b) => a.cpaNm - b.cpaNm || a.tcpaMin - b.tcpaMin)
+}

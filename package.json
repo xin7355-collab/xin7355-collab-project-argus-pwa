@@ -1,7 +1,7 @@
 {
   "name": "project-argus-pwa",
   "private": true,
-  "version": "2.25.0",
+  "version": "2.26.0",
   "type": "module",
   "description": "Tactical Earth Observation & Edge AI - 海域觀測 PWA",
   "scripts": {
