@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTacticalStore } from '../store/tacticalStore'
 import { isAisConfigured } from '../lib/ais'
 import { isSentinelConfigured } from '../lib/sentinel'
-import { analyzeVessels } from '../lib/aisAnomaly'
+import { analyzeVessels, analyzeApproach } from '../lib/aisAnomaly'
 
 /** AIS 模式控制面板：船舶數、搜尋、異常警示、衛星船隻疊層（漁火／雷達）。 */
 export function AisControls() {
@@ -13,8 +13,11 @@ export function AisControls() {
   const setShowRadarVessels = useTacticalStore((s) => s.setShowRadarVessels)
   const gotoCoord = useTacticalStore((s) => s.gotoCoord)
   const setStatus = useTacticalStore((s) => s.setStatus)
+  const ownPosition = useTacticalStore((s) => s.ownPosition)
   const analyses = analyzeVessels(vessels)
   const flagged = analyses.filter((a) => a.level !== 'ok')
+  // 🎯 趨近我方（需 GPS 定位）：會近距離通過的船，碰撞/接觸預警
+  const approaches = ownPosition ? analyzeApproach(vessels, ownPosition).slice(0, 6) : []
 
   // 🔎 搜尋船隻（船名或 MMSI）
   const [q, setQ] = useState('')
@@ -59,6 +62,30 @@ export function AisControls() {
           </div>
         )}
       </div>
+
+      {/* 🎯 趨近我方（CPA 預警）：需開 📍 定位 */}
+      {approaches.length > 0 && (
+        <div className="flex flex-col gap-1 rounded border border-rose-500/50 bg-rose-500/10 p-2">
+          <div className="text-[0.6875rem] font-semibold text-rose-300">
+            🎯 趨近我方 {approaches.length}（會近距離通過）
+          </div>
+          {approaches.map((a) => (
+            <button
+              key={a.vessel.mmsi}
+              onClick={() => flyTo(a.vessel.lat, a.vessel.lng, a.vessel.name)}
+              className="flex items-center justify-between gap-2 rounded border border-rose-500/30 bg-rose-500/5 px-2 py-1 text-left active:scale-95"
+            >
+              <span className="min-w-0 flex-1 truncate text-[0.625rem] font-semibold text-rose-100">🔺 {a.vessel.name}</span>
+              <span className="shrink-0 font-mono text-[0.5625rem] text-rose-200/90">
+                最近 {a.cpaNm.toFixed(1)}浬 · {Math.round(a.tcpaMin)}分後 · 現 {a.distNm.toFixed(1)}浬
+              </span>
+            </button>
+          ))}
+          <p className="text-[0.5625rem] leading-relaxed text-slate-500">
+            以我方定點、目標維持現航向航速估算最近接近距離(CPA)與時間(TCPA)；供避碰/接觸預警參考。
+          </p>
+        </div>
+      )}
 
       {flagged.length > 0 && (
         <div className="flex flex-col gap-1 rounded border border-amber-500/40 bg-amber-500/5 p-2">
