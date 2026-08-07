@@ -180,7 +180,7 @@ export interface DeadZoneOpts {
  *   • 否則退回視距圓：距離 ≤ 涵蓋半徑即算涵蓋（樂觀，會低估山後死角）。
  */
 export function deadZones(list: Repeater[], opts: DeadZoneOpts = {}): DeadZones {
-  const { rings, useTerrain = false, gridN = 44 } = opts
+  const { rings, useTerrain = false, gridN = 48 } = opts
   if (!list.length) return { cells: [], dLat: 0, dLng: 0, total: 0, terrainUsed: false }
   let terrainUsed = false
   const covs = list.map((r) => {

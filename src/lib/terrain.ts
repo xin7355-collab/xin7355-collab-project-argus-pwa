@@ -99,11 +99,13 @@ export async function terrainCoverage(inp: TerrainInput, opts: TerrainOpts = {})
   const { lat, lng, antennaM, targetM, maxKm } = inp
   const k = inp.kFactor ?? 4 / 3
   if (!(maxKm > 0)) return []
-  // 取樣密度：控制在 ~200 點內（1–2 次請求），避免點數過多→逐批請求→限流/逾時失敗。
-  // 方位少一點沒關係、沿線步數要夠（LOS 遮蔽靠沿線密度）。
-  const bearings = opts.bearings ?? 18
-  const stepKm = opts.stepKm ?? Math.max(0.5, maxKm / 11)
-  const steps = Math.max(3, Math.min(11, Math.ceil(maxKm / stepKm)))
+  // 取樣密度（約 ~580 點 / 6 批請求，elevationBatch 會分批+退避重試）：
+  //   • 方位 36 條（每 10°）：角解析度是抓「放射狀窄谷」盲區的關鍵——太疏會把
+  //     山谷縫隙在相鄰射線間平滑掉，死角就漏標。
+  //   • 沿線 ≤16 段：徑向解析度用來抓「細稜線」遮蔽。
+  const bearings = opts.bearings ?? 36
+  const stepKm = opts.stepKm ?? Math.min(2.5, Math.max(0.4, maxKm / 16))
+  const steps = Math.max(3, Math.min(16, Math.ceil(maxKm / stepKm)))
 
   // 取樣點：第 0 個是站台本身，其後每方位 steps 個
   const pts: [number, number][] = [[lat, lng]]
