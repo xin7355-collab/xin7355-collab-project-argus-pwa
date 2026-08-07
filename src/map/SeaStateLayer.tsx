@@ -4,7 +4,7 @@ import { useTacticalStore } from '../store/tacticalStore'
 import { fetchEnvGrid, type MarineEnv } from '../lib/marineEnv'
 import { sstColorDyn, waveColorDyn } from '../lib/colorScale'
 import { isCwaConfigured } from '../lib/config'
-import { fetchCwaSeaAreas } from '../lib/cwaMarine'
+import { fetchCwaSeaAreas, fetchCwaTide } from '../lib/cwaMarine'
 
 /**
  * 海況熱力圖：把當前視野的海溫或浪高畫成彩色網格（免金鑰，Open-Meteo）。
@@ -15,6 +15,7 @@ export function SeaStateLayer({ map }: { map: L.Map }) {
   const field = useTacticalStore((s) => s.seaStateField)
   const setStatus = useTacticalStore((s) => s.setStatus)
   const setCwaSeaAreas = useTacticalStore((s) => s.setCwaSeaAreas)
+  const setCwaTide = useTacticalStore((s) => s.setCwaTide)
   const setSeaStateRange = useTacticalStore((s) => s.setSeaStateRange)
 
   const groupRef = useRef<L.LayerGroup | null>(null)
@@ -111,12 +112,19 @@ export function SeaStateLayer({ map }: { map: L.Map }) {
     map.on('moveend', onMoveEnd)
     refresh()
 
-    // CWA 台灣各海域海面天氣/波浪官方預報（有設定才抓，一次即可）。
+    // CWA 台灣各海域海面天氣/波浪官方預報 + 潮汐（有設定才抓，一次即可）。
     let cancelled = false
     setCwaSeaAreas(null)
+    setCwaTide(null)
     if (isCwaConfigured()) {
       fetchCwaSeaAreas().then((s) => {
         if (!cancelled) setCwaSeaAreas(s)
+      })
+      // 潮汐以「我方定位」優先，否則用目前地圖中心找最近潮位站。
+      const own = useTacticalStore.getState().ownPosition
+      const c = own ?? { lat: map.getCenter().lat, lng: map.getCenter().lng }
+      fetchCwaTide(c.lat, c.lng).then((t) => {
+        if (!cancelled) setCwaTide(t)
       })
     }
 
@@ -128,6 +136,7 @@ export function SeaStateLayer({ map }: { map: L.Map }) {
       map.removeLayer(group)
       groupRef.current = null
       envRef.current = []
+      setCwaTide(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, field])
