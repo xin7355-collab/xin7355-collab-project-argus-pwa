@@ -16,6 +16,8 @@ import {
   type Repeater,
 } from '../lib/radio'
 import { terrainCoverage } from '../lib/terrain'
+import { elevation } from '../lib/elevation'
+import { antennaTopM } from '../lib/radio'
 import { WIND_FARMS } from '../lib/maritimeRef'
 import { saveOrShareText, saveResultMsg } from '../lib/fileShare'
 import { CoordField } from './CoordField'
@@ -28,6 +30,61 @@ const RX_PRESETS = [
   { m: 2.5, label: '車機 2.5m' },
   { m: 10, label: '固定台 10m' },
 ]
+
+/**
+ * 數字輸入框：可「完整清空」再輸入（不會硬留一個數字）。
+ * 內部用字串草稿：空白/只有負號小數點時暫不套用；可解析成有限數才即時更新預覽；
+ * 失焦時才夾到 [min,max]、空白則回退 fallback。外部值改變（套預設/載入編輯）會同步。
+ */
+function NumField({
+  value,
+  onCommit,
+  fallback,
+  min,
+  max,
+  step,
+  className,
+}: {
+  value: number
+  onCommit: (n: number) => void
+  fallback: number
+  min?: number
+  max?: number
+  step?: string
+  className?: string
+}) {
+  const [draft, setDraft] = useState(String(value))
+  useEffect(() => {
+    // 只在外部值真的變了才覆蓋草稿（值相等代表是自己剛送出的，別打斷輸入/小數點）
+    if (Number(draft) !== value) setDraft(String(value))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={draft}
+      step={step}
+      onChange={(e) => {
+        const s = e.target.value
+        setDraft(s)
+        if (s.trim() === '') return // 允許清空，狀態暫不變
+        const n = Number(s)
+        if (Number.isFinite(n)) onCommit(n) // 即時更新預覽（先不夾 min，輸入才順）
+      }}
+      onBlur={() => {
+        const s = draft.trim()
+        let n = s === '' ? NaN : Number(s)
+        if (!Number.isFinite(n)) n = fallback
+        if (min != null) n = Math.max(min, n)
+        if (max != null) n = Math.min(max, n)
+        onCommit(n)
+        setDraft(String(n))
+      }}
+      className={className}
+    />
+  )
+}
 
 /**
  * 無線電中繼台覆蓋面板（📻，私密）：輸入座標/天線高/頻率/瓦數，
@@ -114,6 +171,9 @@ export function RadioPanel() {
   const [mobilePowerW, setMobilePowerW] = useState(RADIO_DEFAULTS.mobilePowerW)
   const [mobileGainDbi, setMobileGainDbi] = useState(RADIO_DEFAULTS.mobileGainDbi)
   const [deviceId, setDeviceId] = useState('') // 目前選的裝置預設（highlight 用）
+  // 站點地面高程（由座標自動查 DEM）：天線頂＝地面高程＋天線高，山頂站自動大範圍。
+  const [siteElev, setSiteElev] = useState<number | null>(null)
+  const [siteElevBusy, setSiteElevBusy] = useState(false)
 
   // 一鍵套用裝置預設：不懂數值的使用者選類型就好
   const applyDevice = (p: (typeof DEVICE_PRESETS)[number]) => {
@@ -144,6 +204,7 @@ export function RadioPanel() {
     setPathExp(r.pathExp)
     setMobilePowerW(r.mobilePowerW ?? RADIO_DEFAULTS.mobilePowerW)
     setMobileGainDbi(r.mobileGainDbi ?? RADIO_DEFAULTS.mobileGainDbi)
+    setSiteElev(r.siteElevM ?? null)
     setDeviceId('')
     setOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -154,15 +215,9 @@ export function RadioPanel() {
     setLatStr('')
     setLngStr('')
     setDeviceId('')
+    setSiteElev(null)
     setEditingId(null)
   }
-
-  const preview: Repeater = {
-    id: '', name, lat: 0, lng: 0, antennaM, freqMHz, powerW, rxM, txGainDbi, rxSensDbm, pathExp, kFactor,
-    mobilePowerW, mobileGainDbi,
-  }
-  const cov = coverage(preview)
-  const b = band(freqMHz)
 
   const resolvePos = (): { lat: number; lng: number } | null => {
     if (pos === 'gps') return ownPosition ? { lat: ownPosition.lat, lng: ownPosition.lng } : null
@@ -173,11 +228,60 @@ export function RadioPanel() {
     return { lat: la, lng: ln }
   }
 
-  const add = () => {
+  // 座標一旦可解析 → 自動查該點地面高程（DEM），供「天線頂＝地面＋天線高」即時預覽。
+  const posLat = pos === 'gps' ? ownPosition?.lat : pos === 'center' ? mapView.lat : parseFloat(latStr)
+  const posLng = pos === 'gps' ? ownPosition?.lng : pos === 'center' ? mapView.lng : parseFloat(lngStr)
+  useEffect(() => {
+    if (!open) return
+    const la = Number(posLat)
+    const ln = Number(posLng)
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) {
+      setSiteElev(null)
+      return
+    }
+    let cancelled = false
+    setSiteElevBusy(true)
+    const t = setTimeout(async () => {
+      try {
+        const e = await elevation(la, ln)
+        if (!cancelled) setSiteElev(Number.isFinite(e as number) ? (e as number) : null)
+      } catch {
+        if (!cancelled) setSiteElev(null)
+      } finally {
+        if (!cancelled) setSiteElevBusy(false)
+      }
+    }, 450)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, posLat, posLng])
+
+  const preview: Repeater = {
+    id: '', name, lat: 0, lng: 0, antennaM, freqMHz, powerW, rxM, txGainDbi, rxSensDbm, pathExp, kFactor,
+    mobilePowerW, mobileGainDbi, siteElevM: siteElev ?? undefined,
+  }
+  const cov = coverage(preview)
+  const b = band(freqMHz)
+  const antTop = antennaTopM(siteElev ?? 0, antennaM)
+
+  const add = async () => {
     const p = resolvePos()
     if (!p) {
       alert(pos === 'gps' ? '尚無 GPS 定位' : '請輸入有效的緯度、經度')
       return
+    }
+    // 站點地面高程：優先用預覽已查到的；沒有就現查一次（查不到則不帶，退回天線高）。
+    let elev = siteElev
+    if (elev == null) {
+      setStatus('查詢站點地面高程中…')
+      try {
+        const e = await elevation(p.lat, p.lng)
+        elev = Number.isFinite(e as number) ? (e as number) : null
+      } catch {
+        elev = null
+      }
     }
     const data = {
       name: name.trim() || `中繼台 ${list.length + 1}`,
@@ -193,12 +297,14 @@ export function RadioPanel() {
       kFactor,
       mobilePowerW,
       mobileGainDbi,
+      siteElevM: elev ?? undefined,
     }
     if (editingId) {
       updateRepeater(editingId, data) // 編輯：更新既有站台
-      setStatus(`已更新「${data.name}」`)
+      setStatus(`已更新「${data.name}」（站點海拔 ${elev != null ? Math.round(elev) + 'm' : '未取得'}）`)
     } else {
       addRepeater(data)
+      setStatus(`已新增「${data.name}」（站點海拔 ${elev != null ? Math.round(elev) + 'm' : '未取得'}）`)
     }
     resetForm()
     setOpen(false)
@@ -369,8 +475,8 @@ export function RadioPanel() {
                 <span className="text-[0.625rem] text-slate-400">用畫面中心 {mapView.lat.toFixed(4)}, {mapView.lng.toFixed(4)}</span>
               )}
 
-              {/* 天線高 */}
-              <label className="text-[0.625rem] text-slate-400">📡 發射天線高 {antennaM}m</label>
+              {/* 天線高（＝鐵塔/天線離地高，不必填海拔；站點海拔會自動加） */}
+              <label className="text-[0.625rem] text-slate-400">📡 發射天線高（鐵塔離地高）{antennaM}m</label>
               <div className="flex flex-wrap gap-1">
                 {ANT_PRESETS.map((h) => (
                   <button
@@ -381,19 +487,49 @@ export function RadioPanel() {
                     {h}m
                   </button>
                 ))}
-                <input type="number" value={antennaM} onChange={(e) => setAntennaM(Math.max(1, Number(e.target.value) || 1))} className="w-16 rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
+                <NumField
+                  value={antennaM}
+                  onCommit={setAntennaM}
+                  fallback={30}
+                  min={1}
+                  className="w-16 rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100"
+                />
+              </div>
+              {/* 站點地面高程（自動查）→ 天線頂海拔＝地面＋天線高。使用者不必手填海拔。 */}
+              <div className="rounded border border-tactical-cyan/30 bg-tactical-cyan/5 px-2 py-1 text-[0.5625rem] leading-relaxed text-slate-300">
+                {siteElevBusy ? (
+                  <span className="text-slate-400">⛰️ 查詢站點地面高程中…</span>
+                ) : siteElev != null ? (
+                  <span>
+                    ⛰️ 站點地面海拔 <b className="text-tactical-cyan">{Math.round(siteElev)}m</b>（座標自動查）＋ 天線 {antennaM}m ＝ 天線頂 <b className="text-tactical-green">{Math.round(antTop)}m</b>。山頂站自動有大範圍，你只要填鐵塔高。
+                  </span>
+                ) : (
+                  <span className="text-slate-400">⛰️ 填座標後自動查站點海拔並加進天線頂高（查不到則只用天線高）。</span>
+                )}
               </div>
 
               {/* 頻率 + 功率 */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[0.625rem] text-slate-400">📶 頻率 (MHz)</label>
-                  <input type="number" value={freqMHz} onChange={(e) => setFreqMHz(Math.max(1, Number(e.target.value) || 1))} className="w-full rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100" />
+                  <NumField
+                    value={freqMHz}
+                    onCommit={setFreqMHz}
+                    fallback={145}
+                    min={1}
+                    className="w-full rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100"
+                  />
                   <span className="text-[0.5625rem] text-slate-500">{b.name}</span>
                 </div>
                 <div>
                   <label className="text-[0.625rem] text-slate-400">⚡ 功率 (W)</label>
-                  <input type="number" value={powerW} onChange={(e) => setPowerW(Math.max(0.1, Number(e.target.value) || 0.1))} className="w-full rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100" />
+                  <NumField
+                    value={powerW}
+                    onCommit={setPowerW}
+                    fallback={25}
+                    min={0.1}
+                    className="w-full rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100"
+                  />
                 </div>
               </div>
 
@@ -436,23 +572,23 @@ export function RadioPanel() {
                 <div className="flex flex-col gap-1.5 rounded bg-slate-800/40 p-1.5">
                   <div className="grid grid-cols-3 gap-1.5">
                     <label className="text-[0.5625rem] text-slate-400">站台增益 dBi
-                      <input type="number" value={txGainDbi} onChange={(e) => setTxGainDbi(Number(e.target.value) || 0)} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
+                      <NumField value={txGainDbi} onCommit={setTxGainDbi} fallback={0} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
                     </label>
                     <label className="text-[0.5625rem] text-slate-400">手持靈敏度 dBm
-                      <input type="number" value={rxSensDbm} onChange={(e) => setRxSensDbm(Number(e.target.value) || -112)} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
+                      <NumField value={rxSensDbm} onCommit={setRxSensDbm} fallback={-112} max={0} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
                     </label>
                     <label className="text-[0.5625rem] text-slate-400">地形 n
-                      <input type="number" step="0.1" value={pathExp} onChange={(e) => setPathExp(Math.max(2, Number(e.target.value) || 3))} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
+                      <NumField value={pathExp} onCommit={setPathExp} fallback={3} min={2} step="0.1" className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
                     </label>
                   </div>
                   {/* 上行（手持→站台）：解「打不回」的關鍵參數 */}
                   <div className="text-[0.5625rem] font-semibold text-amber-300/80">📱 沿岸手持上行（打回站台）</div>
                   <div className="grid grid-cols-2 gap-1.5">
                     <label className="text-[0.5625rem] text-slate-400">手持功率 W（手持5/車機25）
-                      <input type="number" value={mobilePowerW} onChange={(e) => setMobilePowerW(Math.max(0.1, Number(e.target.value) || 5))} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
+                      <NumField value={mobilePowerW} onCommit={setMobilePowerW} fallback={5} min={0.1} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
                     </label>
                     <label className="text-[0.5625rem] text-slate-400">手持增益 dBi（橡皮天線~0）
-                      <input type="number" value={mobileGainDbi} onChange={(e) => setMobileGainDbi(Number(e.target.value) || 0)} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
+                      <NumField value={mobileGainDbi} onCommit={setMobileGainDbi} fallback={0} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
                     </label>
                   </div>
                 </div>

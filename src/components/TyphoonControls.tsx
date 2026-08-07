@@ -1,4 +1,4 @@
-import { currentPoint, hasForecast } from '../lib/typhoon'
+import { currentPoint, hasForecast, impactWindow } from '../lib/typhoon'
 import { isCwaConfigured } from '../lib/config'
 import { estimateWarnings, marineVerdict } from '../lib/typhoonWarning'
 import { typhoonBrief } from '../lib/typhoonBrief'
@@ -27,6 +27,7 @@ export function TyphoonControls() {
   const cwaAlerts = useTacticalStore((s) => s.cwaAlerts)
   const setActiveTyphoon = useTacticalStore((s) => s.setActiveTyphoon)
   const own = useTacticalStore((s) => s.ownPosition)
+  const mapView = useTacticalStore((s) => s.mapView)
   const tyScrubHours = useTacticalStore((s) => s.tyScrubHours)
   const setTyScrubHours = useTacticalStore((s) => s.setTyScrubHours)
   const cwa = isCwaConfigured()
@@ -59,6 +60,11 @@ export function TyphoonControls() {
     ? typhoonBrief(ty, { lat: own.lat, lng: own.lng }, '您所在位置')
     : typhoonBrief(ty)
   const designation = !ty.demo && isDesignation(ty.name)
+  // 影響時窗研判（何時進入/脫離七級暴風圈）：以我方 GPS 優先，否則畫面中心。
+  const impactRef = own ?? { lat: mapView.lat, lng: mapView.lng }
+  const iw = impactWindow(ty, impactRef)
+  const refLabel = own ? '您所在位置' : '畫面中心'
+  const clockAt = (h: number) => fmtDayHour(Date.now() + h * 3600000)
 
   const threatColor =
     brief.threat === 'extreme'
@@ -221,6 +227,55 @@ export function TyphoonControls() {
           </div>
         </div>
       </div>
+
+      {/* 影響時窗：預估進入 / 脫離（解除）七級暴風圈的時刻 */}
+      {iw && (
+        <div
+          className={`rounded-lg border p-2 ${
+            iw.affectedNow
+              ? 'border-rose-500/60 bg-rose-500/10 text-rose-100'
+              : iw.enterHours != null
+                ? 'border-amber-500/50 bg-amber-500/10 text-amber-100'
+                : 'border-tactical-green/40 bg-tactical-green/5 text-tactical-green'
+          }`}
+        >
+          <div className="mb-1 flex items-center gap-1 text-[0.6875rem] font-bold">
+            <span>⏳</span> 影響時窗研判（七級暴風圈 · 對{refLabel}）
+            {iw.estimated && <span className="ml-auto text-[0.5625rem] font-normal opacity-70">簡易外推</span>}
+          </div>
+          <div className="flex flex-col gap-0.5 text-[0.6875rem] leading-relaxed">
+            {iw.affectedNow ? (
+              iw.exitHours != null ? (
+                <span>
+                  🔴 目前已在暴風圈內；預估 <b>{clockAt(iw.exitHours)}</b>（約 +{iw.exitHours}h）
+                  脫離、警報可望解除。
+                </span>
+              ) : (
+                <span>
+                  🔴 目前已在暴風圈內；預報期內（未來 {iw.horizonHours}h）<b>尚未脫離</b>，請持續留意。
+                </span>
+              )
+            ) : iw.enterHours != null ? (
+              <span>
+                🟠 尚未進入；預估 <b>{clockAt(iw.enterHours)}</b>（約 +{iw.enterHours}h）進入暴風圈
+                {iw.exitHours != null && iw.exitHours > iw.enterHours ? (
+                  <>，並於 <b>{clockAt(iw.exitHours)}</b>（+{iw.exitHours}h）脫離。</>
+                ) : (
+                  '。'
+                )}
+              </span>
+            ) : (
+              <span>
+                🟢 預報期內（未來 {iw.horizonHours}h）<b>不會進入</b>七級暴風圈。目前距中心{' '}
+                {Math.round(iw.distNowKm)} km、暴風半徑 {Math.round(iw.galeNowKm)} km。
+              </span>
+            )}
+            <span className="text-[0.5625rem] text-slate-500">
+              以預報路徑逐時內插暴風圈研判；非官方，實際解除以中央氣象署發布為準。{!own && '開 📍 定位可改以您實際位置研判。'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* 預報摘要 */}
       {future.length > 0 && (

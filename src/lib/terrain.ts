@@ -6,6 +6,8 @@
 //
 // 數位電台在山後＝直接斷訊，所以此形狀比圓圈更貼近實況。需連網取高程。
 
+import { antennaTopM } from './radio'
+
 const R_EARTH = 6371000
 const DEG = Math.PI / 180
 
@@ -118,11 +120,9 @@ export async function terrainCoverage(inp: TerrainInput, opts: TerrainOpts = {})
   }
 
   const elevs = await elevationBatch(pts)
-  // 天線頂海拔：取「站點地面高程」與「使用者填的天線高」兩者較大者（+3m 桅桿）。
-  // 這樣不論使用者把欄位當「山頂海拔」（如小雪山 3020m）或「離地桅桿高」都不會
-  // 重複相加（避免 2900m 地形又加 3020m → 6000m 的過度樂觀，山後陰影才算得對）。
-  const siteElev = elevs[0]
-  const H0 = Math.max(siteElev, antennaM) + 3
+  // 天線頂海拔＝站點地面高程（本函式自查的 DEM）＋天線高（antennaTopM 一致處理：
+  // 一般鐵塔高相加；>300m 視為絕對海拔不重複加）。與涵蓋圈用同一套邏輯。
+  const H0 = antennaTopM(elevs[0], antennaM) + 3
 
   const ring: [number, number][] = []
   let p = 1
