@@ -17,7 +17,7 @@ import { InterceptPanel } from './components/InterceptPanel'
 import { DrPanel } from './components/DrPanel'
 import { SecureUnlock } from './components/SecureUnlock'
 import { ToolLauncher } from './components/ToolLauncher'
-import { CwaAlertBanner } from './components/CwaAlertBanner'
+import { SituationOverview } from './components/SituationOverview'
 import { applyUiScale } from './lib/uiScale'
 import { useTacticalStore } from './store/tacticalStore'
 
@@ -32,7 +32,7 @@ export default function App() {
     <div className="relative h-full w-full overflow-hidden bg-tactical-bg text-slate-200">
       <MapContainer />
       <StatusBar />
-      <CwaAlertBanner />
+      <SituationOverview />
       <SettingsPanel />
       <ToolLauncher />
       <CoordManager />
