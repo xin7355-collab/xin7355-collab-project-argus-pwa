@@ -12,12 +12,31 @@ export function AisControls() {
   const showRadarVessels = useTacticalStore((s) => s.showRadarVessels)
   const setShowRadarVessels = useTacticalStore((s) => s.setShowRadarVessels)
   const gotoCoord = useTacticalStore((s) => s.gotoCoord)
+  const fitPoints = useTacticalStore((s) => s.fitPoints)
+  const mapView = useTacticalStore((s) => s.mapView)
   const setStatus = useTacticalStore((s) => s.setStatus)
   const ownPosition = useTacticalStore((s) => s.ownPosition)
   const analyses = analyzeVessels(vessels)
   const flagged = analyses.filter((a) => a.level !== 'ok')
   // 🎯 趨近我方（需 GPS 定位）：會近距離通過的船，碰撞/接觸預警
   const approaches = ownPosition ? analyzeApproach(vessels, ownPosition).slice(0, 6) : []
+
+  // 📋 全部船隻：依「距我方（或畫面中心）」由近到遠排序，一次瀏覽
+  const [showAll, setShowAll] = useState(false)
+  const ref = ownPosition ?? mapView
+  const cosLat = Math.cos((ref.lat * Math.PI) / 180) || 1e-6
+  const allByDist = vessels
+    .map((v) => ({
+      v,
+      nm: Math.hypot((v.lng - ref.lng) * 60 * cosLat, (v.lat - ref.lat) * 60),
+    }))
+    .sort((a, b) => a.nm - b.nm)
+  // 一次看到全部船：縮放地圖到涵蓋所有船位。
+  const fitAll = () => {
+    if (vessels.length === 0) return
+    fitPoints(vessels.map((v) => [v.lat, v.lng] as [number, number]))
+    setStatus(`已縮放至涵蓋全部 ${vessels.length} 艘船`)
+  }
 
   // 🔎 搜尋船隻（船名或 MMSI）
   const [q, setQ] = useState('')
@@ -36,6 +55,51 @@ export function AisControls() {
         <span className="text-xs text-slate-400">🔺 AIS 即時船位（已在圖上）</span>
         <span className="font-mono text-sm font-bold text-tactical-green">{vessels.length}</span>
       </div>
+
+      {/* 一次看到全部船：縮放涵蓋所有船 + 展開全部清單 */}
+      {vessels.length > 0 && (
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            onClick={fitAll}
+            className="rounded border border-tactical-green/60 bg-tactical-green/10 px-2 py-1.5 text-[0.6875rem] font-bold text-tactical-green active:scale-95"
+          >
+            🔍 縮放至全部船
+          </button>
+          <button
+            onClick={() => setShowAll((v) => !v)}
+            className={`rounded border px-2 py-1.5 text-[0.6875rem] font-bold active:scale-95 ${
+              showAll
+                ? 'border-tactical-cyan bg-tactical-cyan/15 text-tactical-cyan'
+                : 'border-slate-600 bg-slate-900/60 text-slate-300'
+            }`}
+          >
+            📋 全部清單（{vessels.length}）
+          </button>
+        </div>
+      )}
+
+      {/* 📋 全部船隻清單：依距離由近到遠，點即定位 */}
+      {showAll && vessels.length > 0 && (
+        <div className="flex max-h-52 flex-col gap-0.5 overflow-y-auto rounded border border-slate-700 bg-slate-900/40 p-1">
+          <div className="px-1 pb-0.5 text-[0.5625rem] text-slate-500">
+            依{ownPosition ? '距我方' : '距畫面中心'}由近到遠 · 點船定位
+          </div>
+          {allByDist.map(({ v, nm }) => (
+            <button
+              key={v.mmsi}
+              onClick={() => flyTo(v.lat, v.lng, v.name)}
+              className="flex items-center justify-between gap-2 rounded border border-slate-700/60 bg-slate-800/50 px-2 py-1 text-left active:scale-95"
+            >
+              <span className="min-w-0 flex-1 truncate text-[0.6875rem] font-semibold text-slate-200">
+                🔺 {v.name}
+              </span>
+              <span className="shrink-0 font-mono text-[0.5625rem] text-slate-400">
+                {nm.toFixed(1)}浬 · {v.sog.toFixed(0)}kn
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 🔎 搜尋船隻（船名 / MMSI）→ 點結果定位 */}
       <div className="flex flex-col gap-1">

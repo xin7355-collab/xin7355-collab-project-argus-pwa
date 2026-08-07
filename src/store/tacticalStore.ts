@@ -235,6 +235,8 @@ interface TacticalState {
 
   // ── 地圖飛行目標（座標查詢用，設定後地圖飛過去再清空）────
   flyToTarget: { lat: number; lng: number; zoom?: number } | null
+  /** 縮放至涵蓋這些點（設定後 fitBounds 再清空）；供「一次看到全部船」用。 */
+  fitPointsTarget: [number, number][] | null
 
   // ── 量測工具（距離/方位，跨模式）──────────────────────
   measuring: boolean
@@ -298,6 +300,8 @@ interface TacticalState {
   pushTrackPoint: (p: { lat: number; lng: number }) => void
   clearTrack: () => void
   setFlyTo: (t: { lat: number; lng: number; zoom?: number } | null) => void
+  /** 縮放地圖至涵蓋所有給定點（空/單點自動忽略）。 */
+  fitPoints: (pts: [number, number][] | null) => void
   /** 跳到座標並記錄歷史（座標查詢/清單點擊共用）。 */
   gotoCoord: (lat: number, lng: number, zoom?: number) => void
   /** 新增一筆已存座標（釘選或最愛）。 */
@@ -461,6 +465,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   animPlaying: false,
   animTimes: [],
   flyToTarget: null,
+  fitPointsTarget: null,
   savedCoords: loadSaved(),
   coordHistory: loadHistory(),
   poiGroups: loadGroups(),
@@ -601,6 +606,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
     }),
   clearTrack: () => set({ ownTrack: [] }),
   setFlyTo: (t) => set({ flyToTarget: t }),
+  fitPoints: (pts) => set({ fitPointsTarget: pts }),
   gotoCoord: (lat, lng, zoom) =>
     set((st) => {
       const coordHistory = pushHistory(st.coordHistory, lat, lng, Date.now())
