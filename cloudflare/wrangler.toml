@@ -1,0 +1,12 @@
+name = "argus-edge-ai"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# Workers AI binding（免費額度每天 1 萬次神經網路推論）
+[ai]
+binding = "AI"
+
+# CDSE OAuth token 請用 secret 設定，不要寫在這裡：
+#   wrangler secret put CDSE_TOKEN
+#
+# 若不設定 CDSE_TOKEN，Worker 會走 heuristic fallback，方便先測前端流程。

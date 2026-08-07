@@ -1,0 +1,678 @@
+import { useEffect, useRef, useState } from 'react'
+import { useTacticalStore } from '../store/tacticalStore'
+import {
+  coverage,
+  band,
+  linkStatus,
+  linkColor,
+  fmtDist,
+  RADIO_DEFAULTS,
+  PROP_MODES,
+  DEVICE_PRESETS,
+  repeaterColor,
+  exportRepeatersJson,
+  parseRepeatersJson,
+  windFarmsOnPath,
+  type Repeater,
+} from '../lib/radio'
+import { terrainCoverage } from '../lib/terrain'
+import { WIND_FARMS } from '../lib/maritimeRef'
+import { saveOrShareText, saveResultMsg } from '../lib/fileShare'
+import { CoordField } from './CoordField'
+
+/** 常見天線高快捷（m）。 */
+const ANT_PRESETS = [10, 30, 50, 100, 300]
+/** 常見收訊端高快捷。 */
+const RX_PRESETS = [
+  { m: 1.5, label: '手持 1.5m' },
+  { m: 2.5, label: '車機 2.5m' },
+  { m: 10, label: '固定台 10m' },
+]
+
+/**
+ * 無線電中繼台覆蓋面板（📻，私密）：輸入座標/天線高/頻率/瓦數，
+ * 畫半透明覆蓋圈。位置可手動輸入座標、用畫面中心或 GPS。資料只存本機。
+ */
+export function RadioPanel() {
+  const list = useTacticalStore((s) => s.repeaters)
+  const addRepeater = useTacticalStore((s) => s.addRepeater)
+  const updateRepeater = useTacticalStore((s) => s.updateRepeater)
+  const removeRepeater = useTacticalStore((s) => s.removeRepeater)
+  const editingId = useTacticalStore((s) => s.radioEditingId)
+  const setEditingId = useTacticalStore((s) => s.setRadioEditingId)
+  const radioTrash = useTacticalStore((s) => s.radioTrash)
+  const restoreRepeater = useTacticalStore((s) => s.restoreRepeater)
+  const clearRadioTrash = useTacticalStore((s) => s.clearRadioTrash)
+  const importRepeaters = useTacticalStore((s) => s.importRepeaters)
+  const mapView = useTacticalStore((s) => s.mapView)
+  const ownPosition = useTacticalStore((s) => s.ownPosition)
+  const radioProbe = useTacticalStore((s) => s.radioProbe)
+  const setRadioProbe = useTacticalStore((s) => s.setRadioProbe)
+  const radioEdit = useTacticalStore((s) => s.radioEdit)
+  const setRadioEdit = useTacticalStore((s) => s.setRadioEdit)
+  const showGap = useTacticalStore((s) => s.showRadioGap)
+  const setShowGap = useTacticalStore((s) => s.setShowRadioGap)
+  const showTerrain = useTacticalStore((s) => s.showTerrain)
+  const setShowTerrain = useTacticalStore((s) => s.setShowTerrain)
+  const terrainBusy = useTacticalStore((s) => s.terrainBusy)
+  const setTerrainBusy = useTacticalStore((s) => s.setTerrainBusy)
+  const setTerrainRing = useTacticalStore((s) => s.setTerrainRing)
+  const setStatus = useTacticalStore((s) => s.setStatus)
+  const openTool = useTacticalStore((s) => s.openTool)
+  const setOpenTool = useTacticalStore((s) => s.setOpenTool)
+  const open = openTool === 'radio'
+  const setOpen = (v: boolean) => setOpenTool(v ? 'radio' : null)
+  const fileRef = useRef<HTMLInputElement | null>(null)
+
+  // 匯出：分享／下載 JSON 備份（不上傳；iOS 用分享表單）
+  const exportBackup = async () => {
+    if (!list.length) return
+    const r = await saveOrShareText(
+      `argus-repeaters-${new Date().toISOString().slice(0, 10)}.json`,
+      exportRepeatersJson(list),
+      'application/json',
+    )
+    setStatus(saveResultMsg(r, `${list.length} 座中繼台備份`))
+  }
+
+  // 匯入：讀本機 JSON 檔，追加到現有清單
+  const importBackup = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const parsed = parseRepeatersJson(String(reader.result || ''))
+      if (!parsed || !parsed.length) {
+        alert('匯入失敗：檔案格式不符或沒有中繼台資料')
+        return
+      }
+      importRepeaters(parsed)
+      setStatus(`已匯入 ${parsed.length} 座中繼台`)
+    }
+    reader.readAsText(file)
+  }
+
+  // 現場單位定位輸入
+  const [uName, setUName] = useState('')
+  const [uPos, setUPos] = useState<'coord' | 'center' | 'gps'>('coord')
+  const [uLat, setULat] = useState('')
+  const [uLng, setULng] = useState('')
+
+  const [name, setName] = useState('')
+  const [pos, setPos] = useState<'coord' | 'center' | 'gps'>('coord')
+  const [latStr, setLatStr] = useState('')
+  const [lngStr, setLngStr] = useState('')
+  const [antennaM, setAntennaM] = useState(50)
+  const [freqMHz, setFreqMHz] = useState(145)
+  const [powerW, setPowerW] = useState(25)
+  const [rxM, setRxM] = useState(RADIO_DEFAULTS.rxM)
+  const [kFactor, setKFactor] = useState(RADIO_DEFAULTS.kFactor)
+  const [adv, setAdv] = useState(false)
+  const [txGainDbi, setTxGainDbi] = useState(RADIO_DEFAULTS.txGainDbi)
+  const [rxSensDbm, setRxSensDbm] = useState(RADIO_DEFAULTS.rxSensDbm)
+  const [pathExp, setPathExp] = useState(RADIO_DEFAULTS.pathExp)
+  const [mobilePowerW, setMobilePowerW] = useState(RADIO_DEFAULTS.mobilePowerW)
+  const [mobileGainDbi, setMobileGainDbi] = useState(RADIO_DEFAULTS.mobileGainDbi)
+  const [deviceId, setDeviceId] = useState('') // 目前選的裝置預設（highlight 用）
+
+  // 一鍵套用裝置預設：不懂數值的使用者選類型就好
+  const applyDevice = (p: (typeof DEVICE_PRESETS)[number]) => {
+    setDeviceId(p.id)
+    setAntennaM(p.antennaM)
+    setPowerW(p.powerW)
+    setFreqMHz(p.freqMHz)
+    setTxGainDbi(p.txGainDbi)
+    setPathExp(p.pathExp)
+  }
+
+  // 點地圖記號或清單✏️→帶入該站資料到表單編輯
+  useEffect(() => {
+    if (!editingId) return
+    const r = list.find((x) => x.id === editingId)
+    if (!r) return
+    setName(r.name)
+    setPos('coord')
+    setLatStr(String(r.lat))
+    setLngStr(String(r.lng))
+    setAntennaM(r.antennaM)
+    setFreqMHz(r.freqMHz)
+    setPowerW(r.powerW)
+    setRxM(r.rxM)
+    setKFactor(r.kFactor)
+    setTxGainDbi(r.txGainDbi)
+    setRxSensDbm(r.rxSensDbm)
+    setPathExp(r.pathExp)
+    setMobilePowerW(r.mobilePowerW ?? RADIO_DEFAULTS.mobilePowerW)
+    setMobileGainDbi(r.mobileGainDbi ?? RADIO_DEFAULTS.mobileGainDbi)
+    setDeviceId('')
+    setOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId])
+
+  const resetForm = () => {
+    setName('')
+    setLatStr('')
+    setLngStr('')
+    setDeviceId('')
+    setEditingId(null)
+  }
+
+  const preview: Repeater = {
+    id: '', name, lat: 0, lng: 0, antennaM, freqMHz, powerW, rxM, txGainDbi, rxSensDbm, pathExp, kFactor,
+    mobilePowerW, mobileGainDbi,
+  }
+  const cov = coverage(preview)
+  const b = band(freqMHz)
+
+  const resolvePos = (): { lat: number; lng: number } | null => {
+    if (pos === 'gps') return ownPosition ? { lat: ownPosition.lat, lng: ownPosition.lng } : null
+    if (pos === 'center') return { lat: mapView.lat, lng: mapView.lng }
+    const la = parseFloat(latStr)
+    const ln = parseFloat(lngStr)
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) return null
+    return { lat: la, lng: ln }
+  }
+
+  const add = () => {
+    const p = resolvePos()
+    if (!p) {
+      alert(pos === 'gps' ? '尚無 GPS 定位' : '請輸入有效的緯度、經度')
+      return
+    }
+    const data = {
+      name: name.trim() || `中繼台 ${list.length + 1}`,
+      lat: p.lat,
+      lng: p.lng,
+      antennaM,
+      freqMHz,
+      powerW,
+      rxM,
+      txGainDbi,
+      rxSensDbm,
+      pathExp,
+      kFactor,
+      mobilePowerW,
+      mobileGainDbi,
+    }
+    if (editingId) {
+      updateRepeater(editingId, data) // 編輯：更新既有站台
+      setStatus(`已更新「${data.name}」`)
+    } else {
+      addRepeater(data)
+    }
+    resetForm()
+    setOpen(false)
+  }
+
+  const setProbe = () => {
+    let p: { lat: number; lng: number } | null = null
+    if (uPos === 'gps') p = ownPosition ? { lat: ownPosition.lat, lng: ownPosition.lng } : null
+    else if (uPos === 'center') p = { lat: mapView.lat, lng: mapView.lng }
+    else {
+      const la = parseFloat(uLat)
+      const ln = parseFloat(uLng)
+      if (Number.isFinite(la) && Number.isFinite(ln)) p = { lat: la, lng: ln }
+    }
+    if (!p) {
+      alert(uPos === 'gps' ? '尚無 GPS 定位' : '請輸入有效的緯度、經度')
+      return
+    }
+    setRadioProbe({ lat: p.lat, lng: p.lng, label: uName.trim() || '現場單位' })
+  }
+
+  // 算地形：傳 id 只算單站（點站台看它的真實覆蓋），不傳算全部
+  const computeTerrain = async (onlyId?: string) => {
+    const targets = onlyId ? list.filter((r) => r.id === onlyId) : list
+    if (!targets.length || terrainBusy) return
+    setTerrainBusy(true)
+    setStatus(onlyId ? '地形遮蔽：查詢此站高程中…' : '地形遮蔽：查詢高程中…（依台數需數秒）')
+    try {
+      for (const r of targets) {
+        const ring = await terrainCoverage({
+          lat: r.lat,
+          lng: r.lng,
+          antennaM: r.antennaM,
+          targetM: r.rxM,
+          maxKm: coverage(r).km,
+          kFactor: r.kFactor,
+        })
+        if (ring.length >= 3) setTerrainRing(r.id, ring)
+      }
+      setShowTerrain(true)
+      setStatus('地形遮蔽覆蓋：已依 90m 地形切出真實覆蓋形狀')
+    } catch {
+      setStatus('⚠ 地形高程取得失敗（需連網）；維持圓圈估算')
+      alert('地形高程取得失敗，請確認網路。維持原本圓圈估算。')
+    } finally {
+      setTerrainBusy(false)
+    }
+  }
+
+  return (
+    <>
+      {open && (
+        <div className="pointer-events-auto fixed inset-0 z-[2000] flex items-end justify-center bg-black/60 p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:items-center">
+          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-700 bg-tactical-bg p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-base font-bold text-tactical-cyan">📻 無線電中繼台覆蓋</h2>
+              <button onClick={() => { setEditingId(null); setOpen(false) }} className="text-slate-400 active:scale-95">✕</button>
+            </div>
+            <p className="mb-3 text-[0.625rem] leading-relaxed text-slate-400">
+              輸入中繼台資料，畫出<b>半透明覆蓋圈</b>（視距＋功率取小）。資料只存你手機、不上傳。
+            </p>
+
+            {editingId && (
+              <div className="mb-2 flex items-center justify-between rounded-lg border border-amber-400/50 bg-amber-400/10 px-2.5 py-1.5">
+                <span className="text-xs font-semibold text-amber-300">✏️ 編輯中：{name || '此中繼台'}</span>
+                <button
+                  onClick={() => computeTerrain(editingId)}
+                  disabled={terrainBusy}
+                  className="rounded border border-amber-500/60 bg-amber-500/15 px-2 py-1 text-[0.625rem] font-bold text-amber-300 active:scale-95 disabled:opacity-50"
+                >
+                  {terrainBusy ? '⏳' : '🏔️ 算此站地形'}
+                </button>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2 rounded-lg border border-slate-700 bg-slate-900/40 p-2.5">
+              {/* 裝置類型快速預設（不確定就選這個，數值自動填好） */}
+              <div className="rounded-lg border border-tactical-cyan/40 bg-tactical-cyan/5 p-2">
+                <div className="mb-1.5 text-[0.6875rem] font-semibold text-tactical-cyan">🎚️ 快速預設（不確定就選這個）</div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {DEVICE_PRESETS.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => applyDevice(p)}
+                      className={`flex flex-col items-center gap-0.5 rounded-lg border px-1 py-2 active:scale-95 ${
+                        deviceId === p.id
+                          ? 'border-tactical-cyan bg-tactical-cyan/15 text-tactical-cyan'
+                          : 'border-slate-600 bg-slate-900/50 text-slate-300'
+                      }`}
+                    >
+                      <span className="text-lg leading-none">{p.icon}</span>
+                      <span className="text-[0.625rem] font-semibold">{p.label}</span>
+                      <span className="text-[0.5625rem] leading-tight text-slate-400">{p.desc}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[0.5625rem] leading-tight text-slate-500">
+                  選完只要填台名＋位置就能新增；下面數值可再手動微調。專業使用者可略過、直接填。
+                </p>
+              </div>
+
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="台名（例：大武山中繼台）"
+                className="rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100"
+              />
+
+              {/* 位置來源 */}
+              <div className="grid grid-cols-3 gap-1">
+                {([['coord', '手動座標'], ['center', '畫面中心'], ['gps', '我的 GPS']] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => setPos(id)}
+                    className={`rounded border px-1 py-1 text-[0.625rem] font-semibold active:scale-95 ${
+                      pos === id ? 'border-tactical-cyan bg-tactical-cyan/15 text-tactical-cyan' : 'border-slate-600 text-slate-300'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {pos === 'coord' && (
+                <div className="flex flex-col gap-1.5">
+                  <CoordField onParsed={(la, ln) => { setLatStr(String(la)); setLngStr(String(ln)) }} />
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <input
+                      value={latStr}
+                      onChange={(e) => setLatStr(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="緯度 例 22.63"
+                      className="rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100"
+                    />
+                    <input
+                      value={lngStr}
+                      onChange={(e) => setLngStr(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="經度 例 120.65"
+                      className="rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100"
+                    />
+                  </div>
+                </div>
+              )}
+              {pos === 'center' && (
+                <span className="text-[0.625rem] text-slate-400">用畫面中心 {mapView.lat.toFixed(4)}, {mapView.lng.toFixed(4)}</span>
+              )}
+
+              {/* 天線高 */}
+              <label className="text-[0.625rem] text-slate-400">📡 發射天線高 {antennaM}m</label>
+              <div className="flex flex-wrap gap-1">
+                {ANT_PRESETS.map((h) => (
+                  <button
+                    key={h}
+                    onClick={() => setAntennaM(h)}
+                    className={`rounded border px-2 py-1 text-[0.625rem] active:scale-95 ${antennaM === h ? 'border-tactical-cyan bg-tactical-cyan/15 text-tactical-cyan' : 'border-slate-600 text-slate-300'}`}
+                  >
+                    {h}m
+                  </button>
+                ))}
+                <input type="number" value={antennaM} onChange={(e) => setAntennaM(Math.max(1, Number(e.target.value) || 1))} className="w-16 rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
+              </div>
+
+              {/* 頻率 + 功率 */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[0.625rem] text-slate-400">📶 頻率 (MHz)</label>
+                  <input type="number" value={freqMHz} onChange={(e) => setFreqMHz(Math.max(1, Number(e.target.value) || 1))} className="w-full rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100" />
+                  <span className="text-[0.5625rem] text-slate-500">{b.name}</span>
+                </div>
+                <div>
+                  <label className="text-[0.625rem] text-slate-400">⚡ 功率 (W)</label>
+                  <input type="number" value={powerW} onChange={(e) => setPowerW(Math.max(0.1, Number(e.target.value) || 0.1))} className="w-full rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100" />
+                </div>
+              </div>
+
+              {/* 收訊端高 */}
+              <label className="text-[0.625rem] text-slate-400">📱 收訊端天線高 {rxM}m</label>
+              <div className="flex flex-wrap gap-1">
+                {RX_PRESETS.map((t) => (
+                  <button
+                    key={t.m}
+                    onClick={() => setRxM(t.m)}
+                    className={`rounded border px-2 py-1 text-[0.625rem] active:scale-95 ${rxM === t.m ? 'border-tactical-cyan bg-tactical-cyan/15 text-tactical-cyan' : 'border-slate-600 text-slate-300'}`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* 傳播條件（日夜/波導 → 地球曲度 k）*/}
+              <label className="text-[0.625rem] text-slate-400">🌐 傳播條件（日夜/大氣折射）</label>
+              <div className="grid grid-cols-3 gap-1">
+                {PROP_MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => setKFactor(m.k)}
+                    className={`rounded border px-1 py-1 text-[0.625rem] font-semibold active:scale-95 ${
+                      Math.abs(kFactor - m.k) < 0.01 ? 'border-tactical-cyan bg-tactical-cyan/15 text-tactical-cyan' : 'border-slate-600 text-slate-300'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[0.5625rem] text-slate-500">夜間海面逆溫→超折射→發話距離較遠(k={kFactor.toFixed(2)})</span>
+
+              {/* 進階 */}
+              <button onClick={() => setAdv(!adv)} className="text-left text-[0.625rem] text-tactical-cyan">
+                {adv ? '▾' : '▸'} 進階（站台增益/靈敏度/地形 · 手持上行功率）
+              </button>
+              {adv && (
+                <div className="flex flex-col gap-1.5 rounded bg-slate-800/40 p-1.5">
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <label className="text-[0.5625rem] text-slate-400">站台增益 dBi
+                      <input type="number" value={txGainDbi} onChange={(e) => setTxGainDbi(Number(e.target.value) || 0)} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
+                    </label>
+                    <label className="text-[0.5625rem] text-slate-400">手持靈敏度 dBm
+                      <input type="number" value={rxSensDbm} onChange={(e) => setRxSensDbm(Number(e.target.value) || -112)} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
+                    </label>
+                    <label className="text-[0.5625rem] text-slate-400">地形 n
+                      <input type="number" step="0.1" value={pathExp} onChange={(e) => setPathExp(Math.max(2, Number(e.target.value) || 3))} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
+                    </label>
+                  </div>
+                  {/* 上行（手持→站台）：解「打不回」的關鍵參數 */}
+                  <div className="text-[0.5625rem] font-semibold text-amber-300/80">📱 沿岸手持上行（打回站台）</div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <label className="text-[0.5625rem] text-slate-400">手持功率 W（手持5/車機25）
+                      <input type="number" value={mobilePowerW} onChange={(e) => setMobilePowerW(Math.max(0.1, Number(e.target.value) || 5))} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
+                    </label>
+                    <label className="text-[0.5625rem] text-slate-400">手持增益 dBi（橡皮天線~0）
+                      <input type="number" value={mobileGainDbi} onChange={(e) => setMobileGainDbi(Number(e.target.value) || 0)} className="w-full rounded border border-slate-600 bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-100" />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* 即時預估 */}
+              <div className="rounded bg-slate-800/60 p-1.5 text-[0.6875rem] text-slate-200">
+                預估覆蓋 <b style={{ color: b.color }}>{cov.km.toFixed(1)} km</b>
+                <span className="text-slate-500">（{cov.limit === 'los' ? '視距限制' : '功率限制'}：視距 {cov.losKm.toFixed(1)}km / 功率 {cov.powerKm.toFixed(0)}km）</span>
+              </div>
+
+              <div className="flex gap-1.5">
+                <button onClick={add} className="flex-1 rounded-lg border border-tactical-cyan bg-tactical-cyan/15 py-2 text-sm font-bold text-tactical-cyan active:scale-95">
+                  {editingId ? '💾 儲存修改' : '＋ 新增覆蓋圈到地圖'}
+                </button>
+                {editingId && (
+                  <button
+                    onClick={() => { resetForm(); setOpen(false) }}
+                    className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 active:scale-95"
+                  >
+                    取消
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 地形遮蔽覆蓋 */}
+            {list.length > 0 && (
+              <div className="mt-3 flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5">
+                <div className="text-[0.6875rem] font-semibold text-amber-300">🏔️ 地形遮蔽覆蓋（真實形狀）</div>
+                <p className="text-[0.625rem] leading-relaxed text-slate-400">
+                  用 90m 地形高程逐方位算視線遮蔽，把覆蓋從「圓圈」切成「被山擋出的真實形狀」。
+                  數位電台在山後＝直接斷訊，此形狀更準。需連網、依台數約數秒。
+                </p>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => computeTerrain()}
+                    disabled={terrainBusy}
+                    className="flex-1 rounded-lg border border-amber-500/60 bg-amber-500/15 py-2 text-xs font-bold text-amber-300 active:scale-95 disabled:opacity-50"
+                  >
+                    {terrainBusy ? '⏳ 計算中…' : '🏔️ 計算地形遮蔽覆蓋'}
+                  </button>
+                  <button
+                    onClick={() => setShowTerrain(!showTerrain)}
+                    className={`rounded-lg border px-3 py-2 text-xs active:scale-95 ${showTerrain ? 'border-amber-500 bg-amber-500/15 text-amber-300' : 'border-slate-600 text-slate-300'}`}
+                  >
+                    {showTerrain ? '圓圈' : '地形'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 現場單位定位 / 測距 / 數位鏈路研判 */}
+            {list.length > 0 && (
+              <div className="mt-3 flex flex-col gap-2 rounded-lg border border-tactical-green/40 bg-tactical-green/5 p-2.5">
+                <div className="text-[0.6875rem] font-semibold text-tactical-green">📍 現場單位定位（測距＋數位鏈路研判）</div>
+                <p className="text-[0.625rem] leading-relaxed text-slate-400">
+                  輸入數位電台回傳的座標 → 畫各站台到它的連線＋距離（浬/km/m），並研判能否穩定回傳。
+                </p>
+                <input
+                  value={uName}
+                  onChange={(e) => setUName(e.target.value)}
+                  placeholder="單位名（例：巡邏艇3號）"
+                  className="rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100"
+                />
+                <div className="grid grid-cols-3 gap-1">
+                  {([['coord', '座標'], ['center', '畫面中心'], ['gps', '我的 GPS']] as const).map(([id, label]) => (
+                    <button
+                      key={id}
+                      onClick={() => setUPos(id)}
+                      className={`rounded border px-1 py-1 text-[0.625rem] font-semibold active:scale-95 ${
+                        uPos === id ? 'border-tactical-green bg-tactical-green/15 text-tactical-green' : 'border-slate-600 text-slate-300'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {uPos === 'coord' && (
+                  <div className="flex flex-col gap-1.5">
+                    <CoordField onParsed={(la, ln) => { setULat(String(la)); setULng(String(ln)) }} />
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <input value={uLat} onChange={(e) => setULat(e.target.value)} inputMode="decimal" placeholder="緯度" className="rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100" />
+                      <input value={uLng} onChange={(e) => setULng(e.target.value)} inputMode="decimal" placeholder="經度" className="rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100" />
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-1.5">
+                  <button onClick={setProbe} className="flex-1 rounded-lg border border-tactical-green bg-tactical-green/15 py-2 text-xs font-bold text-tactical-green active:scale-95">
+                    📍 定位並測距
+                  </button>
+                  {radioProbe && (
+                    <button onClick={() => setRadioProbe(null)} className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-300 active:scale-95">
+                      清除
+                    </button>
+                  )}
+                </div>
+
+                {/* 各站台鏈路研判（依餘裕排序） */}
+                {radioProbe && (
+                  <div className="flex flex-col gap-1">
+                    <div className="text-[0.625rem] font-semibold text-slate-400">{radioProbe.label}：各台鏈路（強→弱）</div>
+                    {list
+                      .map((r) => ({
+                        r,
+                        ls: linkStatus(r, radioProbe.lat, radioProbe.lng),
+                        wf: windFarmsOnPath(r.lat, r.lng, radioProbe.lat, radioProbe.lng, WIND_FARMS),
+                      }))
+                      .sort((a, b) => b.ls.marginDb - a.ls.marginDb)
+                      .map(({ r, ls, wf }) => (
+                        <div key={r.id} className="rounded border border-slate-700 bg-slate-900/50 px-2 py-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[0.6875rem] font-semibold text-slate-200">📻 {r.name}</span>
+                            <span className="text-[0.625rem]" style={{ color: linkColor(ls.level) }}>{ls.text}</span>
+                          </div>
+                          <div className="text-[0.5625rem] text-slate-400">
+                            距 {fmtDist(ls.distM)}｜方位 {ls.bearing.toFixed(0)}°
+                          </div>
+                          <div className="text-[0.5625rem]">
+                            <span className={ls.downMarginDb > 0 ? 'text-tactical-green' : 'text-rose-400'}>下行 {ls.downMarginDb.toFixed(0)}dB</span>
+                            <span className="text-slate-600"> ／ </span>
+                            <span className={ls.upMarginDb > 0 ? 'text-tactical-green' : 'text-rose-400'}>上行 {ls.upMarginDb.toFixed(0)}dB</span>
+                            {ls.limiting === 'up' && <span className="text-amber-400"> · 卡在上行</span>}
+                          </div>
+                          {wf.length > 0 && (
+                            <div className="mt-0.5 text-[0.5625rem] text-amber-400">🌀 路徑穿越離岸風電場：{wf.join('、')}（多重路徑衰落/遮蔽，訊號可能忽強忽弱）</div>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 備份匯出/匯入（只存本機） */}
+            <div className="mt-3 flex items-center gap-1.5">
+              <button
+                onClick={exportBackup}
+                disabled={!list.length}
+                className="flex-1 rounded-lg border border-slate-600 py-1.5 text-[0.6875rem] text-slate-300 active:scale-95 disabled:opacity-40"
+              >
+                ⬇ 匯出備份
+              </button>
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="flex-1 rounded-lg border border-slate-600 py-1.5 text-[0.6875rem] text-slate-300 active:scale-95"
+              >
+                ⬆ 匯入備份
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) importBackup(f)
+                  e.target.value = ''
+                }}
+              />
+            </div>
+
+            {/* 回收桶：誤刪還原 */}
+            {radioTrash.length > 0 && (
+              <div className="mt-2 flex flex-col gap-1 rounded-lg border border-slate-700 bg-slate-900/40 p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[0.6875rem] font-semibold text-slate-400">🗑 回收桶（{radioTrash.length}）· 可還原</span>
+                  <button onClick={clearRadioTrash} className="text-[0.625rem] text-slate-500 active:scale-95">清空</button>
+                </div>
+                {radioTrash.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between rounded border border-slate-700/60 bg-slate-800/40 px-2 py-1">
+                    <span className="truncate text-[0.625rem] text-slate-300">📻 {r.name}（{r.freqMHz}MHz/{r.powerW}W）</span>
+                    <button
+                      onClick={() => restoreRepeater(r.id)}
+                      className="ml-2 shrink-0 rounded border border-tactical-green/60 px-2 py-0.5 text-[0.625rem] text-tactical-green active:scale-95"
+                    >
+                      ↩ 還原
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 清單 */}
+            {list.length > 0 && (
+              <div className="mt-3 flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="text-[0.6875rem] font-semibold text-slate-400">已建中繼台（{list.length}）</div>
+                  <div className="flex items-center gap-1.5">
+                    {list.length > 1 && (
+                      <button
+                        onClick={() => setShowGap(!showGap)}
+                        className={`rounded border px-2 py-1 text-[0.625rem] active:scale-95 ${
+                          showGap ? 'border-rose-400 bg-rose-400/15 text-rose-300' : 'border-slate-600 text-slate-300'
+                        }`}
+                        title="多台覆蓋聯集後仍收不到的海域反白"
+                      >
+                        📡 死角
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setRadioEdit(!radioEdit)}
+                      className={`rounded border px-2 py-1 text-[0.625rem] active:scale-95 ${
+                        radioEdit ? 'border-amber-400 bg-amber-400/15 text-amber-300' : 'border-slate-600 text-slate-300'
+                      }`}
+                      title="開啟後可在地圖上拖曳中繼台記號微調位置"
+                    >
+                      {radioEdit ? '✋ 拖曳中·完成' : '✋ 拖曳微調'}
+                    </button>
+                  </div>
+                </div>
+                {showGap && (
+                  <p className="rounded border border-rose-400/40 bg-rose-400/5 px-2 py-1 text-[0.5625rem] text-rose-200">
+                    🔴 紅色網格＝所有中繼台<b>聯集後仍收不到</b>的死角海域，站與站之間的縫一目了然。
+                  </p>
+                )}
+                {radioEdit && (
+                  <p className="rounded border border-amber-400/40 bg-amber-400/5 px-2 py-1 text-[0.5625rem] text-amber-200">
+                    地圖上的 📻 記號現在可<b>拖曳微調位置</b>，放開即存檔。微調完請按「完成」關閉，避免誤觸移位。
+                  </p>
+                )}
+                {list.map((r) => {
+                  const c = coverage(r)
+                  return (
+                    <div key={r.id} className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-900/50 px-2.5 py-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        {/* 顏色圓點：對應地圖上該站的覆蓋圈顏色 */}
+                        <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: repeaterColor(r.id) }} />
+                        <div className="flex min-w-0 flex-col">
+                          <span className="truncate text-xs font-semibold text-slate-200">📻 {r.name}</span>
+                          <span className="text-[0.625rem] text-slate-400">{r.freqMHz}MHz/{r.powerW}W/天線{r.antennaM}m｜覆蓋 {c.km.toFixed(1)}km</span>
+                        </div>
+                      </div>
+                      <div className="ml-2 flex shrink-0 items-center gap-2">
+                        <button onClick={() => setEditingId(r.id)} className="text-tactical-cyan active:scale-95" aria-label="編輯">✏️</button>
+                        <button onClick={() => removeRepeater(r.id)} className="text-rose-400 active:scale-95" aria-label="刪除">🗑</button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}

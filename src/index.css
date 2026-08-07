@@ -1,0 +1,587 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #0f172a;
+  overscroll-behavior: none;
+  font-family: system-ui, -apple-system, 'Noto Sans TC', sans-serif;
+}
+
+/* ── iPhone 瀏海 / 底部 Home 指示條 安全區 ────────────────── */
+.safe-top {
+  padding-top: calc(0.5rem + env(safe-area-inset-top));
+  padding-left: calc(1rem + env(safe-area-inset-left));
+  padding-right: calc(1rem + env(safe-area-inset-right));
+}
+/* 底部面板：避開 Home 指示條，並保留左右安全區 */
+.safe-bottom {
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  padding-left: calc(0.75rem + env(safe-area-inset-left));
+  padding-right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 右上浮動按鈕避開瀏海（齒輪）*/
+.safe-float-top {
+  top: calc(0.5rem + env(safe-area-inset-top) + 2.2rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 定位按鈕，疊在齒輪下方 */
+.safe-float-top2 {
+  top: calc(0.5rem + env(safe-area-inset-top) + 5.6rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 離線地圖按鈕，再下一格 */
+.safe-float-top3 {
+  top: calc(0.5rem + env(safe-area-inset-top) + 9rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 領海基線按鈕，再下一格 */
+.safe-float-top4 {
+  top: calc(0.5rem + env(safe-area-inset-top) + 12.4rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 座標管理按鈕，再下一格 */
+.safe-float-top5 {
+  top: calc(0.5rem + env(safe-area-inset-top) + 15.8rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 量測工具按鈕，再下一格 */
+.safe-float-top6 {
+  top: calc(0.5rem + env(safe-area-inset-top) + 19.2rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 第 7 格 */
+.safe-float-top7 {
+  top: calc(0.5rem + env(safe-area-inset-top) + 22.6rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 第 8 格（底圖切換） */
+.safe-float-top8 {
+  top: calc(0.5rem + env(safe-area-inset-top) + 26rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 第 9 格（現場點位/搜尋） */
+.safe-float-top9 {
+  top: calc(0.5rem + env(safe-area-inset-top) + 29.4rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 第 10 格（夜勤光照） */
+.safe-float-top10 {
+  top: calc(0.5rem + env(safe-area-inset-top) + 32.8rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 第 11 格（雷達涵蓋） */
+.safe-float-top11 {
+  top: calc(0.5rem + env(safe-area-inset-top) + 36.2rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 第 12 格（無線電覆蓋） */
+.safe-float-top12 {
+  top: calc(0.5rem + env(safe-area-inset-top) + 39.6rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 第 13 格（瞭望哨視域） */
+.safe-float-top13 {
+  top: calc(0.5rem + env(safe-area-inset-top) + 43rem);
+  right: calc(0.75rem + env(safe-area-inset-right));
+}
+/* 瞭望哨記號 + 標籤 */
+.lookout-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-size: 15px;
+  line-height: 1;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid #a3e635;
+  border-radius: 50%;
+}
+.lookout-label {
+  margin-top: 1px;
+  font: 700 9px ui-monospace, monospace;
+  text-align: center;
+  white-space: nowrap;
+  color: #a3e635;
+  text-shadow: 0 0 3px #000, 0 0 3px #000;
+}
+/* 無線電中繼台記號 + 標籤 */
+.radio-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-size: 15px;
+  line-height: 1;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid #22d3ee;
+  border-radius: 50%;
+}
+.radio-label {
+  margin-top: 1px;
+  font: 700 9px ui-monospace, monospace;
+  text-align: center;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000, 0 0 3px #000;
+}
+/* 現場單位記號 */
+.radio-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-size: 16px;
+  line-height: 1;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid #34d399;
+  border-radius: 50%;
+}
+/* 站台→單位 距離標籤 */
+.radio-dist {
+  font: 700 9px ui-monospace, monospace;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid;
+  border-radius: 7px;
+  text-align: center;
+  padding: 1px 3px;
+  white-space: nowrap;
+}
+/* 雷達站記號 + 標籤 */
+.radar-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-size: 15px;
+  line-height: 1;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid #22d3ee;
+  border-radius: 50%;
+}
+.radar-label {
+  margin-top: 1px;
+  font: 700 9px ui-monospace, monospace;
+  text-align: center;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000, 0 0 3px #000;
+}
+/* 離岸風電雷達雜波標籤 */
+.clutter-label {
+  font: 700 9px ui-monospace, monospace;
+  color: #fecaca;
+  background: rgba(69, 10, 10, 0.85);
+  border: 1px solid #f43f5e;
+  border-radius: 7px;
+  text-align: center;
+  padding: 1px 4px;
+  white-space: nowrap;
+}
+/* 自訂點位記號（emoji + 群組色框）＋ 標籤 */
+.poi-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-size: 17px;
+  line-height: 1;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid #22d3ee;
+  border-radius: 50%;
+}
+.poi-label {
+  margin-top: 1px;
+  font: 700 10px ui-monospace, monospace;
+  text-align: center;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000, 0 0 3px #000;
+  transform: translateX(-50%);
+  margin-left: 15px;
+}
+/* 量測段標籤 */
+.measure-label {
+  font: 700 10px ui-monospace, monospace;
+  color: #cffafe;
+  background: rgba(8, 51, 68, 0.9);
+  border: 1px solid #22d3ee;
+  border-radius: 8px;
+  text-align: center;
+  line-height: 15px;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+/* 距離圈標籤 */
+.range-label {
+  font: 700 10px ui-monospace, monospace;
+  background: rgba(8, 47, 73, 0.88);
+  border: 1px solid;
+  border-radius: 7px;
+  text-align: center;
+  line-height: 14px;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+/* 量測控點：夠大的觸控目標，可拖曳到精準位置 */
+.measure-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(8, 51, 68, 0.92);
+  border: 2px solid #22d3ee;
+  color: #cffafe;
+  font: 700 11px ui-monospace, monospace;
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.18);
+  cursor: grab;
+  touch-action: none;
+}
+/* 釘選座標記號 */
+.pin-marker {
+  font-size: 22px;
+  line-height: 24px;
+  filter: drop-shadow(0 0 4px rgba(244, 114, 182, 0.8));
+}
+
+/* 畫面資訊條：位於狀態列（兩行）下方 */
+.map-info-pos {
+  top: calc(env(safe-area-inset-top) + 3.4rem);
+  left: calc(0.75rem + env(safe-area-inset-left));
+}
+/* 桌面：避開左側「模式欄 + 控制面板」（約 24rem 寬） */
+@media (min-width: 768px) {
+  .map-info-pos {
+    left: 24.75rem;
+  }
+}
+
+/* 深色底圖已改用 CARTO dark_matter，這裡只做輕微微調＋雷達幕氛圍 */
+.base-tiles-tactical {
+  filter: brightness(0.9) contrast(1.05) saturate(1.1);
+}
+
+/* NASA GIBS 衛星影像：略提亮/增豔，讓它在深色主題上更明顯 */
+.gibs-imagery {
+  filter: brightness(1.15) contrast(1.12) saturate(1.25);
+}
+
+/* 雷達幕暈影：邊緣壓暗、中心透亮，營造圓形雷達掃描視覺（不擋操作）*/
+.radar-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 400;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    rgba(15, 23, 42, 0.55) 100%
+  );
+}
+/* 中心細十字準星 */
+.radar-vignette::before,
+.radar-vignette::after {
+  content: '';
+  position: absolute;
+  background: rgba(34, 211, 238, 0.12);
+}
+.radar-vignette::before {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.radar-vignette::after {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+/* AIS 船舶三角形（依航向旋轉） */
+.ais-vessel {
+  font-size: 18px;
+  line-height: 22px;
+  text-align: center;
+  text-shadow: 0 0 4px currentColor;
+}
+/* 異常船隻脈動（注意：旋轉在 inline transform，這裡只改透明度） */
+.ais-vessel.ais-alert {
+  animation: pulse-alert 0.8s ease-in-out infinite;
+}
+
+/* 落海點標記（紅色脈動十字） */
+.mob-marker {
+  font-size: 26px;
+  line-height: 30px;
+  text-align: center;
+  color: #f43f5e;
+  text-shadow: 0 0 8px #f43f5e;
+  animation: pulse-alert 1s ease-in-out infinite;
+}
+
+/* 我的位置藍點 */
+.own-pos {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #38bdf8;
+  border: 2px solid #e0f2fe;
+  box-shadow: 0 0 10px #38bdf8;
+}
+
+/* 目標「現在位置」預測（綠色準星） */
+.now-marker {
+  font-size: 26px;
+  line-height: 30px;
+  text-align: center;
+  color: #34d399;
+  text-shadow: 0 0 8px #34d399, 0 0 3px #000;
+}
+
+/* 搜索航線起點 */
+.search-start {
+  font-size: 16px;
+  line-height: 22px;
+  text-align: center;
+  color: #22d3ee;
+  text-shadow: 0 0 6px #22d3ee;
+}
+
+/* 蒙地卡羅最高機率點 */
+.mc-peak {
+  font-size: 22px;
+  line-height: 26px;
+  text-align: center;
+  color: #fff;
+  text-shadow: 0 0 6px #f43f5e, 0 0 3px #000;
+}
+
+/* 時間軸 scrubber 標籤（琥珀色） */
+.scrub-label {
+  font: 700 11px ui-monospace, monospace;
+  color: #451a03;
+  background: #fbbf24;
+  border-radius: 9px;
+  text-align: center;
+  line-height: 18px;
+  box-shadow: 0 0 8px #fbbf24;
+}
+
+/* 漂流時間標籤 */
+.drift-label {
+  font: 700 11px ui-monospace, monospace;
+  color: #fecdd3;
+  background: rgba(159, 18, 57, 0.85);
+  border: 1px solid #f43f5e;
+  border-radius: 9px;
+  text-align: center;
+  line-height: 16px;
+}
+
+/* AI 偵測框（疑似船隻） */
+.detection-box {
+  width: 22px;
+  height: 22px;
+  border: 2px solid;
+  border-radius: 3px;
+  background: transparent;
+}
+.detection-box[style*='f43f5e'] {
+  animation: pulse-alert 1s ease-in-out infinite;
+}
+
+/* 偵測目標標籤（框角編號 + AIS 標記） */
+.det-label {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid;
+  border-radius: 4px;
+  background: rgba(2, 6, 23, 0.85);
+  font: 700 10px ui-monospace, monospace;
+  line-height: 13px;
+  white-space: nowrap;
+}
+/* 無 AIS 的可疑目標框：脈動 */
+.det-box-alert {
+  animation: pulse-alert 1.1s ease-in-out infinite;
+}
+
+/* 颱風眼旋轉符號 */
+.ty-eye {
+  font-size: 26px;
+  line-height: 34px;
+  text-align: center;
+  text-shadow: 0 0 8px #f43f5e, 0 0 3px #000;
+  animation: ty-spin 4s linear infinite;
+}
+@keyframes ty-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* 您的位置↔颱風 相對距離標籤 */
+.rel-label {
+  font: 700 10px ui-monospace, monospace;
+  color: #bae6fd;
+  background: rgba(8, 47, 73, 0.85);
+  border: 1px solid #38bdf8;
+  border-radius: 8px;
+  text-align: center;
+  line-height: 14px;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+
+/* 颱風預報時間標籤 */
+.ty-time {
+  font: 700 10px ui-monospace, monospace;
+  color: #fecdd3;
+  background: rgba(159, 18, 57, 0.85);
+  border: 1px solid #f43f5e;
+  border-radius: 8px;
+  text-align: center;
+  line-height: 1.2;
+  padding: 2px 5px;
+  white-space: nowrap;
+}
+/* 簡易外推預測（非官方）時間標籤——青色，與官方紅色預報區隔 */
+.ty-est {
+  font: 700 10px ui-monospace, monospace;
+  color: #cffafe;
+  background: rgba(14, 116, 144, 0.85);
+  border: 1px dashed #22d3ee;
+  border-radius: 8px;
+  text-align: center;
+  line-height: 1.2;
+  padding: 2px 5px;
+  white-space: nowrap;
+}
+/* 離岸風電場記號（三葉片風機 SVG）+ 名稱 */
+.wf-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9));
+}
+.wf-label {
+  margin-top: 1px;
+  font: 700 9px ui-monospace, monospace;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000, 0 0 3px #000;
+}
+/* 漁港記號 + 名稱 */
+.port-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 14px;
+  line-height: 1;
+}
+.port-label {
+  margin-top: 1px;
+  font: 700 9px ui-monospace, monospace;
+  color: #6ee7b7;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000, 0 0 3px #000;
+}
+/* 禁/限制水域標籤 */
+.restrict-label {
+  font: 700 10px ui-monospace, monospace;
+  color: #fecaca;
+  background: rgba(69, 10, 10, 0.85);
+  border: 1px solid #f43f5e;
+  border-radius: 8px;
+  text-align: center;
+  padding: 1px 4px;
+  white-space: nowrap;
+}
+/* 暫定執法線標籤 */
+.enforce-label {
+  font: 700 9px ui-monospace, monospace;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid;
+  border-radius: 8px;
+  text-align: center;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+/* 沙洲／淺灘標籤 */
+.shoal-label {
+  font: 700 10px ui-monospace, monospace;
+  color: #fde68a;
+  background: rgba(69, 39, 3, 0.85);
+  border: 1px solid #ca8a04;
+  border-radius: 8px;
+  text-align: center;
+  padding: 1px 4px;
+  white-space: nowrap;
+}
+/* 台海中線標籤 */
+.median-label {
+  font: 700 10px ui-monospace, monospace;
+  color: #fda4af;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #f43f5e;
+  border-radius: 8px;
+  text-align: center;
+  padding: 1px 4px;
+  white-space: nowrap;
+}
+/* 颱風時間軸拖曳的預判位置標籤 */
+.ty-scrub {
+  font: 700 10px ui-monospace, monospace;
+  color: #a5f3fc;
+  background: rgba(8, 51, 68, 0.92);
+  border: 1.5px solid #22d3ee;
+  border-radius: 8px;
+  text-align: center;
+  line-height: 1.25;
+  padding: 2px 5px;
+  white-space: nowrap;
+}
+/* 颱風警報門檻觸發旗標（達海警/陸警發布時機的路徑點） */
+.warn-flag {
+  font: 700 10px ui-monospace, monospace;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1.5px solid;
+  border-radius: 8px;
+  text-align: center;
+  line-height: 1.25;
+  padding: 2px 4px;
+  white-space: nowrap;
+}
+
+/* Leaflet 控制項配色微調 */
+.leaflet-control-zoom a,
+.leaflet-control-scale-line {
+  background: #1e293b !important;
+  color: #22d3ee !important;
+  border-color: #334155 !important;
+}
+.leaflet-control-attribution {
+  background: rgba(15, 23, 42, 0.7) !important;
+  color: #64748b !important;
+  font-size: 9px;
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: #1e293b !important;
+  color: #e2e8f0 !important;
+}

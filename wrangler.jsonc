@@ -1,0 +1,15 @@
+{
+  // 把本 App 以「Cloudflare Worker + 靜態資源」部署（非 Pages）。
+  // 原因：新版 Cloudflare Access 可鎖 Worker，但無法鎖免網域的 pages.dev。
+  // 部署成 Worker 後，它會出現在 Zero Trust → Access → 自託管 → Workers 清單，
+  // 即可用 Email 允許名單上鎖（免費、免自訂網域）。
+  //
+  // 純靜態資源 Worker（無自訂程式碼）：只需 assets.directory 指向 build 產物。
+  "name": "argus-app",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    "directory": "./dist",
+    // 單頁式應用：找不到的路徑一律回 index.html（前端自行處理）。
+    "not_found_handling": "single-page-application"
+  }
+}

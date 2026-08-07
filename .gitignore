@@ -1,0 +1,15 @@
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.*
+!.env.example
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+cloudflare/node_modules
+cloudflare/.wrangler
+
+# TS build cache
+tsconfig.tsbuildinfo
