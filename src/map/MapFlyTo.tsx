@@ -9,6 +9,8 @@ import { useTacticalStore } from '../store/tacticalStore'
 export function MapFlyTo({ map }: { map: L.Map }) {
   const target = useTacticalStore((s) => s.flyToTarget)
   const setFlyTo = useTacticalStore((s) => s.setFlyTo)
+  const fitTarget = useTacticalStore((s) => s.fitPointsTarget)
+  const fitPoints = useTacticalStore((s) => s.fitPoints)
 
   useEffect(() => {
     if (!target) return
@@ -17,6 +19,17 @@ export function MapFlyTo({ map }: { map: L.Map }) {
     })
     setFlyTo(null)
   }, [target, map, setFlyTo])
+
+  // 縮放至涵蓋所有點（「一次看到全部船」）：單點退回 flyTo，多點 fitBounds。
+  useEffect(() => {
+    if (!fitTarget || fitTarget.length === 0) return
+    if (fitTarget.length === 1) {
+      map.flyTo(fitTarget[0], Math.max(map.getZoom(), 11), { duration: 0.8 })
+    } else {
+      map.flyToBounds(L.latLngBounds(fitTarget), { padding: [48, 48], maxZoom: 12, duration: 0.8 })
+    }
+    fitPoints(null)
+  }, [fitTarget, map, fitPoints])
 
   return null
 }
