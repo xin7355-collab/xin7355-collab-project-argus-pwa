@@ -21,6 +21,8 @@ export interface RadarSite {
   targetM: number
   /** 裝備最大量程(km)，涵蓋取「地平線」與此值的較小者。 */
   maxRangeKm: number
+  /** 個別關閉：true＝停用（不畫涵蓋、不納入死角），保留設定可隨時開回。 */
+  off?: boolean
 }
 
 export const RADAR_TYPES: { id: RadarType; label: string; color: string }[] = [
@@ -64,6 +66,7 @@ function normalizeRadarSite(r: Partial<RadarSite>): RadarSite {
     antennaM: n(r.antennaM, 40),
     targetM: n(r.targetM, 2),
     maxRangeKm: n(r.maxRangeKm, 40),
+    off: r.off === true ? true : undefined,
   }
 }
 

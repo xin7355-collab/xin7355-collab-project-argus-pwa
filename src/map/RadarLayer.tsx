@@ -28,6 +28,24 @@ export function RadarLayer({ map }: { map: L.Map }) {
       const km = coverageKm(s)
       const horizon = radarHorizonKm(s.antennaM, s.targetM)
       const capped = horizon > s.maxRangeKm
+
+      // 個別關閉的雷達站：不畫涵蓋/死角環，只留灰暗記號（點一下可編輯／開回）。
+      if (s.off) {
+        const offMarker = L.marker([s.lat, s.lng], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div class="radar-marker" style="border-color:#64748b;color:#64748b;opacity:0.6">📡<div class="radar-label" style="color:#94a3b8">${s.name}<br/>（已關閉）</div></div>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15],
+          }),
+        })
+        offMarker.on('click', () => {
+          setEditingId(s.id)
+          setOpenTool('radar')
+        })
+        offMarker.bindTooltip(`📡 ${s.name}｜已關閉（點我編輯／開回）`, { direction: 'top', offset: [0, -14] }).addTo(g)
+        continue
+      }
       // 小艇死角高亮：漁船(10m) 對比 小艇(2m) 涵蓋，凸顯只看得到大船的環＋縫。
       if (gap) {
         const bigKm = Math.min(radarHorizonKm(s.antennaM, 10), s.maxRangeKm) // 漁船

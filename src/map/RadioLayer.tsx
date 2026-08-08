@@ -28,10 +28,13 @@ export function RadioLayer({ map }: { map: L.Map }) {
     const g = L.layerGroup().addTo(map)
     groupRef.current = g
 
+    const activeReps = repeaters.filter((r) => !r.off) // 已啟用（未個別關閉）的站
+
     // 通訊死角：多台覆蓋聯集後仍收不到的網格（鋪在最底層，涵蓋圈畫其上）
     // 開啟地形時用「被山切出的真實形狀」判定，故山後（圓內卻遮蔽）也會標為死角。
-    if (showGap && repeaters.length) {
-      const dz = deadZones(repeaters, { rings: terrainRings, useTerrain: showTerrain })
+    // 只計入「已啟用」的站，關閉的站不貢獻覆蓋。
+    if (showGap && activeReps.length) {
+      const dz = deadZones(activeReps, { rings: terrainRings, useTerrain: showTerrain })
       const hLat = dz.dLat / 2
       const hLng = dz.dLng / 2
       for (const [lat, lng] of dz.cells) {
@@ -49,6 +52,25 @@ export function RadioLayer({ map }: { map: L.Map }) {
     for (const r of repeaters) {
       const cov = coverage(r)
       const col = repeaterColor(r.id) // 每站不同色（依 id 穩定）
+
+      // 個別關閉的站：不畫涵蓋，只留一個灰暗記號（點一下可編輯/開回），保留設定不刪除。
+      if (r.off) {
+        const offMarker = L.marker([r.lat, r.lng], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div class="radio-marker" style="border-color:#64748b;color:#64748b;opacity:0.6">📻<div class="radio-label" style="color:#94a3b8">${r.name}<br/>（已關閉）</div></div>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15],
+          }),
+        })
+        offMarker.on('click', () => {
+          setEditingId(r.id)
+          setOpenTool('radio')
+        })
+        offMarker.bindTooltip(`📻 ${r.name}｜已關閉（點我編輯／開回）`, { direction: 'top', offset: [0, -14] }).addTo(g)
+        continue
+      }
+
       const ring = terrainRings[r.id]
       if (showTerrain && ring && ring.length >= 3) {
         // 地形遮蔽覆蓋多邊形（被山切出的真實形狀）
@@ -110,7 +132,7 @@ export function RadioLayer({ map }: { map: L.Map }) {
       let bestText = ''
       let bestLevel: 'good' | 'marginal' | 'none' = 'none'
       let bestMargin = -Infinity
-      for (const r of repeaters) {
+      for (const r of activeReps) {
         const ls = linkStatus(r, probe.lat, probe.lng)
         const col = linkColor(ls.level)
         // 只畫視距內、或雖超出但想看關係——這裡一律畫線但用顏色區分
