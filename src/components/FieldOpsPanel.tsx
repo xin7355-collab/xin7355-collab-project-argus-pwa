@@ -3,6 +3,7 @@ import { useTacticalStore } from '../store/tacticalStore'
 import { POI_ICONS, POI_COLORS } from '../lib/poi'
 import { poiToCsv, csvToPoi } from '../lib/poiCsv'
 import { geocode, openGmaps, type GeoResult } from '../lib/geocode'
+import { decodePowerCode, type PoleResult } from '../lib/taipowerPole'
 import { elevation } from '../lib/elevation'
 import { parseCoord, fmtDDM } from '../lib/coordParse'
 import { saveOrShareText, saveResultMsg } from '../lib/fileShare'
@@ -68,6 +69,16 @@ export function FieldOpsPanel() {
     setPLabel(r.label.slice(0, 40))
     setPLat(r.lat.toFixed(5))
     setPLng(r.lng.toFixed(5))
+    setPElev(undefined)
+  }
+
+  // 🔌 電力座標（電線桿/變電箱編號）→ 經緯度（離線解碼，免金鑰）
+  const [poleCode, setPoleCode] = useState('')
+  const pole: PoleResult | null = decodePowerCode(poleCode)
+  const fillFromPole = (p: PoleResult) => {
+    setPLabel(`電桿 ${p.code}`)
+    setPLat(p.lat.toFixed(6))
+    setPLng(p.lng.toFixed(6))
     setPElev(undefined)
   }
   const parsedPt = parseCoord(`${pLat} ${pLng}`) ?? coord2(pLat, pLng)
@@ -249,6 +260,40 @@ export function FieldOpsPanel() {
                   ))}
                 </div>
               )}
+
+              {/* 🔌 電力座標（電線桿/變電箱編號）→ 離線解碼定位 */}
+              <div className="mt-2 border-t border-slate-700/60 pt-2">
+                <div className="mb-1 text-[0.6875rem] font-semibold text-amber-300">🔌 電線桿 / 變電箱編號定位（免連網）</div>
+                <input
+                  value={poleCode}
+                  onChange={(e) => setPoleCode(e.target.value)}
+                  spellCheck={false}
+                  autoCapitalize="characters"
+                  placeholder="輸入電力座標，例：B8146CC58、R1998EE7912"
+                  className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1.5 font-mono text-xs text-slate-200"
+                />
+                {poleCode.trim() && !pole && (
+                  <p className="mt-1 text-[0.625rem] text-amber-400">
+                    ⚠ 無法解讀。格式為 字母＋4數字＋2字母＋2或4數字（電桿牌上那組英數字，例 B8146CC58）。
+                  </p>
+                )}
+                {pole && (
+                  <div className="mt-1 rounded border border-amber-500/40 bg-amber-500/5 px-2 py-1.5">
+                    <div className="font-mono text-[0.6875rem] text-slate-200">
+                      📍 {pole.lat.toFixed(6)}, {pole.lng.toFixed(6)}
+                      <span className="ml-1 text-[0.5625rem] text-slate-500">≈{pole.precisionM}m 精度</span>
+                    </div>
+                    <div className="mt-1 flex gap-1">
+                      <button onClick={() => { gotoCoord(pole.lat, pole.lng, 16); setStatus(`已定位電桿 ${pole.code}`) }} className="flex-1 rounded border border-tactical-cyan/60 bg-tactical-cyan/10 px-1.5 py-1 text-[0.625rem] font-bold text-tactical-cyan active:scale-95">跳過去</button>
+                      <button onClick={() => openGmaps(pole.lat, pole.lng)} className="flex-1 rounded border border-sky-500/60 bg-sky-500/10 px-1.5 py-1 text-[0.625rem] font-bold text-sky-300 active:scale-95">🗺️ Google Maps</button>
+                      <button onClick={() => fillFromPole(pole)} className="flex-1 rounded border border-tactical-green/60 bg-tactical-green/10 px-1.5 py-1 text-[0.625rem] font-bold text-tactical-green active:scale-95">填入↓</button>
+                    </div>
+                    <p className="mt-1 text-[0.5625rem] leading-relaxed text-slate-500">
+                      台電電力座標離線解碼（TWD67→WGS84 近似，約數公尺誤差）。9碼≈10m、11碼≈1m。
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* 新增點位 */}
