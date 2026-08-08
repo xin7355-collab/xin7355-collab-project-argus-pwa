@@ -30,6 +30,7 @@ import { MapFlyTo } from './MapFlyTo'
 import { BrightSpotLayer } from './BrightSpotLayer'
 import { SavedCoordsLayer } from './SavedCoordsLayer'
 import { PoiLayer } from './PoiLayer'
+import { SearchMarkerLayer } from './SearchMarkerLayer'
 import { MeasureLayer } from './MeasureLayer'
 import { RadarLayer, WindClutterLayer } from './RadarLayer'
 import { RadioLayer } from './RadioLayer'
@@ -108,6 +109,7 @@ export function MapContainer() {
       {map && <BrightSpotLayer map={map} />}
       {map && <SavedCoordsLayer map={map} />}
       {map && <PoiLayer map={map} />}
+      {map && <SearchMarkerLayer map={map} />}
       {map && <MeasureLayer map={map} />}
       {map && <MapInfoBar map={map} />}
     </div>

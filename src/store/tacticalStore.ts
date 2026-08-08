@@ -239,6 +239,11 @@ interface TacticalState {
   flyToTarget: { lat: number; lng: number; zoom?: number } | null
   /** 縮放至涵蓋這些點（設定後 fitBounds 再清空）；供「一次看到全部船」用。 */
   fitPointsTarget: [number, number][] | null
+  /**
+   * 搜尋定位預覽標記（地址/地名/電線桿搜尋用）：純暫時、**不存 localStorage**、
+   * 不寫入「最近用過」。離開/重整就消失——沒按「存成點位/釘選」就是沒儲存。
+   */
+  searchMarker: { lat: number; lng: number; label: string } | null
 
   // ── 量測工具（距離/方位，跨模式）──────────────────────
   measuring: boolean
@@ -306,6 +311,13 @@ interface TacticalState {
   fitPoints: (pts: [number, number][] | null) => void
   /** 跳到座標並記錄歷史（座標查詢/清單點擊共用）。 */
   gotoCoord: (lat: number, lng: number, zoom?: number) => void
+  /**
+   * 搜尋預覽：飛到座標並放暫時定位標記 📍，但**不記錄歷史、不存檔**。
+   * 供地址/地名/電線桿搜尋用——只看、不儲存。
+   */
+  previewCoord: (lat: number, lng: number, label?: string, zoom?: number) => void
+  /** 清除搜尋定位預覽標記。 */
+  clearSearchMarker: () => void
   /** 新增一筆已存座標（釘選或最愛）。 */
   addSavedCoord: (c: { lat: number; lng: number; label?: string; pinned?: boolean; favorite?: boolean }) => void
   updateSavedCoord: (id: string, patch: Partial<SavedCoord>) => void
@@ -468,6 +480,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   animPlaying: false,
   animTimes: [],
   flyToTarget: null,
+  searchMarker: null,
   fitPointsTarget: null,
   savedCoords: loadSaved(),
   coordHistory: loadHistory(),
@@ -617,6 +630,13 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
       persistHistory(coordHistory)
       return { flyToTarget: { lat, lng, zoom: zoom ?? 12 }, coordHistory }
     }),
+  // 搜尋預覽：只飛過去＋放暫時標記，不寫歷史、不存檔（離開即消失）。
+  previewCoord: (lat, lng, label, zoom) =>
+    set({
+      flyToTarget: { lat, lng, zoom: zoom ?? 14 },
+      searchMarker: { lat, lng, label: label?.trim() || `${lat.toFixed(5)}, ${lng.toFixed(5)}` },
+    }),
+  clearSearchMarker: () => set({ searchMarker: null }),
   addSavedCoord: (c) =>
     set((st) => {
       const now = Date.now()

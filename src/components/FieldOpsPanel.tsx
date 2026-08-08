@@ -25,6 +25,9 @@ export function FieldOpsPanel() {
   const removePoiPoint = useTacticalStore((s) => s.removePoiPoint)
   const mapView = useTacticalStore((s) => s.mapView)
   const gotoCoord = useTacticalStore((s) => s.gotoCoord)
+  const previewCoord = useTacticalStore((s) => s.previewCoord)
+  const clearSearchMarker = useTacticalStore((s) => s.clearSearchMarker)
+  const searchMarker = useTacticalStore((s) => s.searchMarker)
   const setStatus = useTacticalStore((s) => s.setStatus)
 
   const openTool = useTacticalStore((s) => s.openTool)
@@ -70,6 +73,7 @@ export function FieldOpsPanel() {
     setPLat(r.lat.toFixed(5))
     setPLng(r.lng.toFixed(5))
     setPElev(undefined)
+    previewCoord(r.lat, r.lng, r.label, 14) // 同時放暫時定位標記（存檔前先看位置）
   }
 
   // 🔌 電力座標（電線桿/變電箱編號）→ 經緯度（離線解碼，免金鑰）
@@ -80,6 +84,7 @@ export function FieldOpsPanel() {
     setPLat(p.lat.toFixed(6))
     setPLng(p.lng.toFixed(6))
     setPElev(undefined)
+    previewCoord(p.lat, p.lng, `電桿 ${p.code}`, 16)
   }
   const parsedPt = parseCoord(`${pLat} ${pLng}`) ?? coord2(pLat, pLng)
   const checkElev = async () => {
@@ -107,6 +112,7 @@ export function FieldOpsPanel() {
       }
     }
     addPoiPoint({ groupId: targetGroup, label: pLabel, lat: parsedPt.lat, lng: parsedPt.lng, elevM })
+    clearSearchMarker() // 已正式存成點位，撤掉暫時定位標記
     setStatus(`✅ 已新增點位「${pLabel || '未命名點位'}」`)
     setPLabel('')
     setPLat('')
@@ -233,7 +239,14 @@ export function FieldOpsPanel() {
 
             {/* 搜尋地址/景點 */}
             <div className="mb-3 rounded-lg border border-tactical-cyan/30 bg-tactical-cyan/5 p-2">
-              <div className="mb-1 text-[0.6875rem] font-semibold text-tactical-cyan">🔎 搜尋地址 / 景點 / 港口</div>
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-[0.6875rem] font-semibold text-tactical-cyan">🔎 搜尋地址 / 景點 / 港口</span>
+                {searchMarker && (
+                  <button onClick={clearSearchMarker} className="rounded border border-amber-500/50 px-1.5 py-0.5 text-[0.625rem] text-amber-300 active:scale-95">
+                    📍 清除定位標記
+                  </button>
+                )}
+              </div>
               <div className="flex items-center gap-1">
                 <input
                   value={q}
@@ -253,9 +266,9 @@ export function FieldOpsPanel() {
                   {results.map((r, i) => (
                     <div key={i} className="flex items-center gap-1 rounded border border-slate-700 bg-slate-900/40 px-2 py-1">
                       <span className="flex-1 truncate text-[0.6875rem] text-slate-200" title={r.label}>{r.label}</span>
-                      <button onClick={() => gotoCoord(r.lat, r.lng, 14)} className="shrink-0 rounded border border-slate-600 px-1.5 py-0.5 text-[0.625rem] text-tactical-cyan active:scale-95">跳過去</button>
+                      <button onClick={() => previewCoord(r.lat, r.lng, r.label, 14)} title="在地圖放暫時定位標記（不儲存）" className="shrink-0 rounded border border-amber-500/60 bg-amber-500/10 px-1.5 py-0.5 text-[0.625rem] text-amber-300 active:scale-95">📍 定位</button>
                       <button onClick={() => openGmaps(r.lat, r.lng)} title="用 Google Maps 開啟" className="shrink-0 rounded border border-slate-600 px-1.5 py-0.5 text-[0.625rem] text-sky-300 active:scale-95">🗺️</button>
-                      <button onClick={() => fillFromResult(r)} className="shrink-0 rounded border border-slate-600 px-1.5 py-0.5 text-[0.625rem] text-tactical-green active:scale-95">填入↓</button>
+                      <button onClick={() => fillFromResult(r)} title="填入下方表單，可存成點位" className="shrink-0 rounded border border-slate-600 px-1.5 py-0.5 text-[0.625rem] text-tactical-green active:scale-95">存↓</button>
                     </div>
                   ))}
                 </div>
@@ -284,9 +297,9 @@ export function FieldOpsPanel() {
                       <span className="ml-1 text-[0.5625rem] text-slate-500">≈{pole.precisionM}m 精度</span>
                     </div>
                     <div className="mt-1 flex gap-1">
-                      <button onClick={() => { gotoCoord(pole.lat, pole.lng, 16); setStatus(`已定位電桿 ${pole.code}`) }} className="flex-1 rounded border border-tactical-cyan/60 bg-tactical-cyan/10 px-1.5 py-1 text-[0.625rem] font-bold text-tactical-cyan active:scale-95">跳過去</button>
-                      <button onClick={() => openGmaps(pole.lat, pole.lng)} className="flex-1 rounded border border-sky-500/60 bg-sky-500/10 px-1.5 py-1 text-[0.625rem] font-bold text-sky-300 active:scale-95">🗺️ Google Maps</button>
-                      <button onClick={() => fillFromPole(pole)} className="flex-1 rounded border border-tactical-green/60 bg-tactical-green/10 px-1.5 py-1 text-[0.625rem] font-bold text-tactical-green active:scale-95">填入↓</button>
+                      <button onClick={() => { previewCoord(pole.lat, pole.lng, `電桿 ${pole.code}`, 16); setStatus(`已定位電桿 ${pole.code}（暫時標記，未儲存）`) }} title="在地圖放暫時定位標記（不儲存）" className="flex-1 rounded border border-amber-500/60 bg-amber-500/10 px-1.5 py-1 text-[0.625rem] font-bold text-amber-300 active:scale-95">📍 定位</button>
+                      <button onClick={() => openGmaps(pole.lat, pole.lng)} className="flex-1 rounded border border-sky-500/60 bg-sky-500/10 px-1.5 py-1 text-[0.625rem] font-bold text-sky-300 active:scale-95">🗺️ Maps</button>
+                      <button onClick={() => fillFromPole(pole)} title="填入下方表單，可存成點位" className="flex-1 rounded border border-tactical-green/60 bg-tactical-green/10 px-1.5 py-1 text-[0.625rem] font-bold text-tactical-green active:scale-95">存↓</button>
                     </div>
                     <p className="mt-1 text-[0.5625rem] leading-relaxed text-slate-500">
                       台電電力座標離線解碼（TWD67→WGS84 近似，約數公尺誤差）。9碼≈10m、11碼≈1m。
