@@ -46,3 +46,19 @@ export async function geocode(q: string): Promise<GeoResult[]> {
     }))
     .filter((r) => Number.isFinite(r.lat) && Number.isFinite(r.lng))
 }
+
+// ── Google Maps 深連結（免金鑰，開外部 App/網頁）───────────────
+/** Google Maps 顯示座標地標。 */
+export function gmapsUrl(lat: number, lng: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)},${lng.toFixed(6)}`
+}
+
+/** Google Maps 導航到座標（起點＝使用者目前位置）。 */
+export function gmapsNavUrl(lat: number, lng: number): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lng.toFixed(6)}`
+}
+
+/** 在新分頁開啟 Google Maps（顯示座標或導航）。 */
+export function openGmaps(lat: number, lng: number, nav = false): void {
+  window.open(nav ? gmapsNavUrl(lat, lng) : gmapsUrl(lat, lng), '_blank', 'noopener,noreferrer')
+}

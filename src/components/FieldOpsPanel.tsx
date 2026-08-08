@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { useTacticalStore } from '../store/tacticalStore'
 import { POI_ICONS, POI_COLORS } from '../lib/poi'
 import { poiToCsv, csvToPoi } from '../lib/poiCsv'
-import { geocode, type GeoResult } from '../lib/geocode'
+import { geocode, openGmaps, type GeoResult } from '../lib/geocode'
 import { elevation } from '../lib/elevation'
 import { parseCoord, fmtDDM } from '../lib/coordParse'
 import { saveOrShareText, saveResultMsg } from '../lib/fileShare'
@@ -243,6 +243,7 @@ export function FieldOpsPanel() {
                     <div key={i} className="flex items-center gap-1 rounded border border-slate-700 bg-slate-900/40 px-2 py-1">
                       <span className="flex-1 truncate text-[0.6875rem] text-slate-200" title={r.label}>{r.label}</span>
                       <button onClick={() => gotoCoord(r.lat, r.lng, 14)} className="shrink-0 rounded border border-slate-600 px-1.5 py-0.5 text-[0.625rem] text-tactical-cyan active:scale-95">跳過去</button>
+                      <button onClick={() => openGmaps(r.lat, r.lng)} title="用 Google Maps 開啟" className="shrink-0 rounded border border-slate-600 px-1.5 py-0.5 text-[0.625rem] text-sky-300 active:scale-95">🗺️</button>
                       <button onClick={() => fillFromResult(r)} className="shrink-0 rounded border border-slate-600 px-1.5 py-0.5 text-[0.625rem] text-tactical-green active:scale-95">填入↓</button>
                     </div>
                   ))}
@@ -386,6 +387,7 @@ export function FieldOpsPanel() {
                               {p.label}
                               <span className="ml-1 font-mono text-[0.5625rem] text-slate-500">{fmtDDM(p.lat, p.lng)}{p.elevM != null ? ` · ⛰️${Math.round(p.elevM)}m` : ''}</span>
                             </button>
+                            <button onClick={() => openGmaps(p.lat, p.lng)} title="用 Google Maps 開啟" className="shrink-0 px-1 text-[0.6875rem] text-sky-300 active:scale-95">🗺️</button>
                             <button onClick={() => removePoiPoint(p.id)} className="shrink-0 text-[0.6875rem] text-tactical-alert active:scale-95">🗑</button>
                           </div>
                         ))}
