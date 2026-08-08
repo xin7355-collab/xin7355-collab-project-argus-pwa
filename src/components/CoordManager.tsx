@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTacticalStore } from '../store/tacticalStore'
 import { parseCoord, fmtDecimal, fmtDDM, fmtDMS } from '../lib/coordParse'
 import { shareReport, buildSitrep } from '../lib/report'
+import { openGmaps } from '../lib/geocode'
 import type { SavedCoord } from '../lib/savedCoords'
 
 /**
@@ -137,6 +138,20 @@ export function CoordManager() {
                     className="rounded border border-amber-500/60 bg-amber-500/10 py-1.5 text-xs font-bold text-amber-300 active:scale-95"
                   >
                     ★ 加最愛
+                  </button>
+                </div>
+                <div className="mt-1 grid grid-cols-2 gap-1">
+                  <button
+                    onClick={() => openGmaps(parsed.lat, parsed.lng)}
+                    className="rounded border border-sky-500/60 bg-sky-500/10 py-1.5 text-xs font-bold text-sky-300 active:scale-95"
+                  >
+                    🗺️ Google Maps
+                  </button>
+                  <button
+                    onClick={() => openGmaps(parsed.lat, parsed.lng, true)}
+                    className="rounded border border-sky-500/60 bg-sky-500/10 py-1.5 text-xs font-bold text-sky-300 active:scale-95"
+                  >
+                    🧭 導航過去
                   </button>
                 </div>
                 <button
@@ -288,6 +303,9 @@ function CoordRow({
             </span>
           </button>
         )}
+        <button onClick={() => openGmaps(c.lat, c.lng)} className="shrink-0 px-1 py-1 text-sky-300 active:scale-95" title="用 Google Maps 開啟">
+          🗺️
+        </button>
         <button onClick={onAsRescue} className="shrink-0 px-1 py-1 text-tactical-alert active:scale-95" title="設為搜救點">
           🆘
         </button>
