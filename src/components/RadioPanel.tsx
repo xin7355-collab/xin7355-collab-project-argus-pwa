@@ -837,16 +837,38 @@ export function RadioPanel() {
                 {list.map((r) => {
                   const c = coverage(r)
                   return (
-                    <div key={r.id} className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-900/50 px-2.5 py-2">
+                    <div
+                      key={r.id}
+                      className={`flex items-center justify-between rounded-lg border px-2.5 py-2 ${
+                        r.off ? 'border-slate-700/60 bg-slate-900/30 opacity-60' : 'border-slate-700 bg-slate-900/50'
+                      }`}
+                    >
                       <div className="flex min-w-0 items-center gap-2">
-                        {/* 顏色圓點：對應地圖上該站的覆蓋圈顏色 */}
-                        <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: repeaterColor(r.id) }} />
+                        {/* 顏色圓點：對應地圖上該站的覆蓋圈顏色（關閉時轉灰） */}
+                        <span
+                          className="h-3 w-3 shrink-0 rounded-full"
+                          style={{ backgroundColor: r.off ? '#64748b' : repeaterColor(r.id) }}
+                        />
                         <div className="flex min-w-0 flex-col">
-                          <span className="truncate text-xs font-semibold text-slate-200">📻 {r.name}</span>
+                          <span className="truncate text-xs font-semibold text-slate-200">
+                            📻 {r.name}{r.off && <span className="ml-1 text-[0.5625rem] text-slate-500">（已關閉）</span>}
+                          </span>
                           <span className="text-[0.625rem] text-slate-400">{r.freqMHz}MHz/{r.powerW}W/天線{r.antennaM}m｜覆蓋 {c.km.toFixed(1)}km</span>
                         </div>
                       </div>
                       <div className="ml-2 flex shrink-0 items-center gap-2">
+                        {/* 個別開關：關閉＝地圖不畫此站涵蓋、不納入死角，但保留設定 */}
+                        <button
+                          onClick={() => updateRepeater(r.id, { off: !r.off })}
+                          className={`rounded border px-1.5 py-0.5 text-[0.5625rem] font-bold active:scale-95 ${
+                            r.off
+                              ? 'border-slate-600 bg-slate-800 text-slate-400'
+                              : 'border-tactical-green/60 bg-tactical-green/10 text-tactical-green'
+                          }`}
+                          aria-label={r.off ? '開啟' : '關閉'}
+                        >
+                          {r.off ? '關' : '開'}
+                        </button>
                         <button onClick={() => setEditingId(r.id)} className="text-tactical-cyan active:scale-95" aria-label="編輯">✏️</button>
                         <button onClick={() => removeRepeater(r.id)} className="text-rose-400 active:scale-95" aria-label="刪除">🗑</button>
                       </div>

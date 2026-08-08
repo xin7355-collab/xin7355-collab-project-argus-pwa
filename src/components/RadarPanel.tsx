@@ -339,14 +339,33 @@ export function RadarPanel() {
               <div className="flex flex-col gap-1.5">
                 <div className="text-[0.6875rem] font-semibold text-slate-400">已建雷達站（{sites.length}）</div>
                 {sites.map((s) => (
-                  <div key={s.id} className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-900/50 px-2.5 py-2">
-                    <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-200">📡 {s.name}</span>
+                  <div
+                    key={s.id}
+                    className={`flex items-center justify-between rounded-lg border px-2.5 py-2 ${
+                      s.off ? 'border-slate-700/60 bg-slate-900/30 opacity-60' : 'border-slate-700 bg-slate-900/50'
+                    }`}
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate text-xs font-semibold text-slate-200">
+                        📡 {s.name}{s.off && <span className="ml-1 text-[0.5625rem] text-slate-500">（已關閉）</span>}
+                      </span>
                       <span className="text-[0.625rem] text-slate-400">
                         {RADAR_TYPES.find((r) => r.id === s.type)?.label}｜天線{s.antennaM}m/目標{s.targetM}m｜涵蓋 {coverageKm(s).toFixed(1)}km
                       </span>
                     </div>
                     <div className="ml-2 flex shrink-0 items-center gap-2">
+                      {/* 個別開關：關閉＝地圖不畫此站涵蓋/死角環，但保留設定 */}
+                      <button
+                        onClick={() => updateRadarSite(s.id, { off: !s.off })}
+                        className={`rounded border px-1.5 py-0.5 text-[0.5625rem] font-bold active:scale-95 ${
+                          s.off
+                            ? 'border-slate-600 bg-slate-800 text-slate-400'
+                            : 'border-tactical-green/60 bg-tactical-green/10 text-tactical-green'
+                        }`}
+                        aria-label={s.off ? '開啟' : '關閉'}
+                      >
+                        {s.off ? '關' : '開'}
+                      </button>
                       <button onClick={() => setEditingId(s.id)} className="text-tactical-cyan active:scale-95" aria-label="編輯">✏️</button>
                       <button onClick={() => removeRadarSite(s.id)} className="text-rose-400 active:scale-95" aria-label="刪除">🗑</button>
                     </div>

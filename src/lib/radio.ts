@@ -36,6 +36,8 @@ export interface Repeater {
   stationRxSensDbm?: number
   /** 站點地面高程(m，海拔)：由座標自動查 DEM 帶入；天線頂高＝地面高程＋天線高。 */
   siteElevM?: number
+  /** 個別關閉：true＝停用（不畫涵蓋、不納入死角），保留設定可隨時開回。 */
+  off?: boolean
 }
 
 /**
@@ -430,6 +432,7 @@ function normalizeRepeater(r: Partial<Repeater>): Repeater {
     mobileGainDbi: n(r.mobileGainDbi, RADIO_DEFAULTS.mobileGainDbi),
     stationRxSensDbm: n(r.stationRxSensDbm, RADIO_DEFAULTS.stationRxSensDbm),
     siteElevM: typeof r.siteElevM === 'number' && Number.isFinite(r.siteElevM) ? r.siteElevM : undefined,
+    off: r.off === true ? true : undefined,
   }
 }
 
