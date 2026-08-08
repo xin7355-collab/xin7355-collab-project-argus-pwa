@@ -189,7 +189,7 @@ export function FieldOpsPanel() {
         <div className="pointer-events-auto fixed inset-0 z-[2000] flex items-end justify-center bg-black/60 p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:items-center">
           <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-700 bg-tactical-bg p-4">
             <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-base font-bold text-tactical-cyan">🚩 現場點位</h2>
+              <h2 className="text-base font-bold text-tactical-cyan">🔎 搜尋 / 現場點位</h2>
               <button onClick={() => setOpen(false)} className="text-slate-400 active:scale-95">✕</button>
             </div>
 

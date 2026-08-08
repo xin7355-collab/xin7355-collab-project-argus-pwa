@@ -16,7 +16,7 @@ const TOOLS: Tool[] = [
   { id: 'rings', icon: '◎', label: '距離圈', sub: '1/3/5/12/24 浬同心圓' },
   { id: 'intercept', icon: '🎯', label: '攔截計算', sub: '該操航向 / 攔截時間' },
   { id: 'dr', icon: '🧭', label: '推算船位', sub: '未來 / 回推船位' },
-  { id: 'fieldops', icon: '🚩', label: '現場點位', sub: '檢查據點等自訂據點' },
+  { id: 'fieldops', icon: '🔎', label: '搜尋 / 現場點位', sub: '地址·地名·電線桿定位 / 自訂據點' },
   { id: 'nightops', icon: '🌙', label: '夜勤光照', sub: '月相 / 日出沒' },
   { id: 'radio', icon: '📻', label: '無線電覆蓋', sub: '中繼台 / 死角 / 測距' },
   { id: 'lookout', icon: '👁️', label: '瞭望哨視域', sub: '目視範圍 / 死角' },
