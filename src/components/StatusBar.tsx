@@ -52,7 +52,7 @@ export function StatusBar() {
             secureUnlocked ? 'text-tactical-cyan' : 'text-slate-500'
           }`}
         >
-          v2.35{secureUnlocked ? ' 🔓' : ''}
+          v2.36{secureUnlocked ? ' 🔓' : ''}
         </span>
       </div>
       <span className="min-w-0 truncate font-mono text-[0.6875rem] text-slate-300">{statusMessage}</span>
