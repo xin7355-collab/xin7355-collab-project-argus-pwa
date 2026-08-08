@@ -210,6 +210,32 @@ body,
   transform: translateX(-50%);
   margin-left: 15px;
 }
+/* 搜尋定位預覽標記（暫時、未儲存）— 醒目琥珀色水滴釘 */
+.search-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  font-size: 20px;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px #f59e0b) drop-shadow(0 1px 2px #000);
+  animation: search-pin-bob 1.4s ease-in-out infinite;
+}
+.search-pin-label {
+  margin-top: 1px;
+  font: 700 10px ui-monospace, monospace;
+  color: #fcd34d;
+  text-align: center;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000, 0 0 3px #000;
+  transform: translateX(-50%);
+  margin-left: 17px;
+}
+@keyframes search-pin-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
 /* 量測段標籤 */
 .measure-label {
   font: 700 10px ui-monospace, monospace;
