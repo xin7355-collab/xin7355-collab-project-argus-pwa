@@ -1,7 +1,23 @@
 # 🚀 部署指南（拿到可在手機開的 live 網址）
 
+> [!IMPORTANT]
+> **目前正式部署方式：Cloudflare Worker，且已自動化。**
+> 合併進 `main` 後 GitHub Actions 會自動 build 並部署（見
+> `.github/workflows/deploy.yml`），不需要手動跑任何指令。
+>
+> 需要在 repo 設好兩個 secret 才會動：`CLOUDFLARE_API_TOKEN`、
+> `CLOUDFLARE_ACCOUNT_ID`（Settings → Secrets and variables → Actions）。
+> 沒設的話部署會紅燈失敗並印出說明——刻意不靜默跳過，否則會變成
+> 「合併了但手機還是舊版」而不自知。
+>
+> 想手動部署（例如本機臨時測）：`npm run build && npx wrangler deploy`
+>
+> 選 Worker 而非 Pages 的原因見 `wrangler.jsonc` 註解：Cloudflare Access
+> 鎖得住 Worker，但鎖不住免網域的 `pages.dev`。
+>
+> 以下 Vercel／Pages 兩節為早期做法，保留供參考，非現行方式。
+
 前端是純靜態 PWA，`npm run build` 後把 `dist/` 丟到任何靜態主機即可。
-以下兩個都有免費額度，選一個。
 
 ## 方案 A：Vercel（最快）
 

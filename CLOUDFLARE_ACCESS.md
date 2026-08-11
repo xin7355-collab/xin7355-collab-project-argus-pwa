@@ -8,7 +8,15 @@
 
 ---
 
-## Part A — 把 App 掛到 Cloudflare Pages（免費）
+## Part A — 把 App 掛上去（免費）
+
+> [!WARNING]
+> **本節的 Pages 做法已被取代。** 後來改為部署成 Cloudflare **Worker**，原因是
+> Access 鎖得住 Worker、卻鎖不住免網域的 `pages.dev`（見 `wrangler.jsonc` 註解）。
+> 現行做法是合併進 `main` 由 GitHub Actions 自動部署 Worker，見 `DEPLOY.md`。
+> 下面的 Pages 步驟保留供對照，**若你走 Worker 就跳過 Part A，直接看 Part B**。
+
+### （已取代）Cloudflare Pages 做法
 
 1. 登入 **dash.cloudflare.com** → 左側 **Workers & Pages**
 2. **Create** → **Pages** 頁籤 → **Connect to Git**

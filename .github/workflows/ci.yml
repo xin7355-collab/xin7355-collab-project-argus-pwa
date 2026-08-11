@@ -1,0 +1,35 @@
+# PR 建置檢查：型別 + 建置 + 弱點掃描
+#
+# 部署 workflow 只跑在 main。這支跑在 PR 上，讓「會不會編不過」在合併前就看得到，
+# 而不是合併完才在部署階段炸掉。
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: 型別檢查與建置（tsc -b && vite build）
+        run: npm run build
+
+      - name: 相依套件弱點掃描
+        # 只在有 high 以上弱點時失敗；moderate 以下不擋 PR，避免上游一有風吹草動就卡住。
+        run: npm audit --audit-level=high

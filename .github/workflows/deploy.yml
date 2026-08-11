@@ -1,0 +1,71 @@
+# 自動部署：main 有變動就 build + 上傳 Cloudflare Worker
+#
+# 為什麼需要這個：本專案以 wrangler 部署成 Cloudflare Worker（見 wrangler.jsonc
+# 的說明：Access 鎖得住 Worker、鎖不住免網域的 pages.dev），而 Worker 不像
+# Pages 有 Git 整合，不會自己重新 build。沒有這個 workflow 的話，PR 合併進
+# main 之後手機上還是舊版——程式碼是新的，但沒有人把它送上去。
+#
+# 需要在 repo 設定兩個 secret（Settings → Secrets and variables → Actions）：
+#   CLOUDFLARE_API_TOKEN   Cloudflare 後台建立，權限選 "Edit Cloudflare Workers"
+#   CLOUDFLARE_ACCOUNT_ID  Cloudflare 後台右側可複製
+#
+# 前端金鑰（VITE_*）是 build 期打包進去的，也要設成 secret，否則部署出去的版本
+# 會沒有金鑰（App 仍可運作，但影像/AIS 會退回未設定金鑰的提示與模擬資料）。
+# 這幾個沒設也不會讓 workflow 失敗，只是打包成空值。
+
+name: Deploy to Cloudflare Worker
+
+on:
+  push:
+    branches: [main]
+  # 允許在 Actions 頁面手動觸發（例如只改了 Cloudflare 設定想重推一次）
+  workflow_dispatch:
+
+# 同時只跑一個部署；新的 push 進來就取消還在跑的舊的，避免舊版蓋掉新版
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 先擋掉「secret 沒設」這個最常見的情況，給看得懂的訊息。
+      # 這裡刻意讓它失敗而不是靜默跳過：靜默跳過會重現「合併了但手機還是舊版」
+      # 這個本來要解決的問題，紅燈才看得見。
+      - name: 檢查部署所需 secret
+        run: |
+          missing=""
+          [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] && missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::缺少 secret:$missing"
+            echo "請到 Settings → Secrets and variables → Actions → New repository secret 新增。"
+            echo "CLOUDFLARE_API_TOKEN：Cloudflare 後台 My Profile → API Tokens，範本選 Edit Cloudflare Workers"
+            echo "CLOUDFLARE_ACCOUNT_ID：Cloudflare 後台 Workers & Pages 右側可複製"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安裝相依（照 lockfile，不動版本）
+        run: npm ci
+
+      - name: 型別檢查與建置
+        run: npm run build
+        env:
+          VITE_SENTINEL_INSTANCE_ID: ${{ secrets.VITE_SENTINEL_INSTANCE_ID }}
+          VITE_SENTINEL_WMS_URL: ${{ secrets.VITE_SENTINEL_WMS_URL }}
+          VITE_EDGE_AI_URL: ${{ secrets.VITE_EDGE_AI_URL }}
+          VITE_AISSTREAM_KEY: ${{ secrets.VITE_AISSTREAM_KEY }}
+
+      - name: 部署到 Cloudflare Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
