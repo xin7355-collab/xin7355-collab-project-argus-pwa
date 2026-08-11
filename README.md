@@ -3,7 +3,7 @@
 > **v1.2.0-beta.1** — Tactical Earth Observation & Edge AI
 
 一個給海上人員用的**終極 PWA 戰術面板**。前端只當「純粹的展示層」，
-所有重度運算（軌道、影像、AI）全部丟給 **Web Worker** 或 **Cloudflare Edge**。
+重度運算（影像、AI）全部丟給 **Cloudflare Edge**，前端不背推論成本。
 在搖晃的船艙裡也能一鍵操作。
 
 ## 🎯 三大「一鍵戰術模式」（互斥設計）
@@ -12,8 +12,8 @@
 
 | 模式             | 開啟                                          | 關閉（釋放資源）        |
 | ---------------- | --------------------------------------------- | ----------------------- |
-| 🛰️ **軌道預警**  | OSM 暗色底圖 + Web Worker 算軌跡 + Canvas 亮點 | 所有 WMS 影像層         |
-| 🚢 **雷達盲搜**  | Sentinel-1 SAR 圖磚 + 邊緣 AI 紅色警示框       | Canvas 軌跡（釋放 RAM） |
+| 🛰️ **軌道預警**  | OSM 暗色底圖 + 衛星過境預報面板（純資訊，不掛動畫層） | 所有 WMS 影像層         |
+| 🚢 **雷達盲搜**  | Sentinel-1 SAR 圖磚 + 邊緣 AI 紅色警示框       | WMS 以外的重度圖層      |
 | 🌤️ **沿岸光學**  | Sentinel-2 光學 + 雲量<20% + 日期選擇器        | 雷達圖與 AI 辨識        |
 
 ## 🧩 架構（拒絕邏輯打架）
@@ -28,7 +28,6 @@
    │       1. Base   Layer  OSM 暗色底圖  │
    │       2. Tile   Layer  Sentinel WMS │
    │       3. Vector Layer  AI 紅框 GeoJSON│
-   │       4. Canvas Layer  即時衛星（Worker 驅動）│
    └────────────────────────────────────┘
 ```
 
@@ -37,8 +36,9 @@
 
 ## 💰 防爆 / 防超支機制
 
-- **Canvas 防爆**：切離軌道模式時呼叫 `cancelAnimationFrame()` + `worker.terminate()`
-  徹底停機，不是 `display:none`（見 `SatelliteCanvasLayer.ts`）。
+- **模式互斥**：切模式時先卸載不屬於新模式的重度圖層，再掛上新的；
+  任何時刻只有一種重度資源在跑（見 `LayerControl.tsx`）。
+  軌道預警模式已改為純資訊面板，不再有常駐的 Canvas 動畫與背景運算。
 - **圖磚記憶體回收**：卸載 WMS 層時強制清空 `_tiles` 快取，防 Leaflet memory leak。
 - **AI 防超支**：手機端**絕不**載入 YOLO；只把 bbox 丟給 Cloudflare Worker，
   回傳 `<1KB` GeoJSON。Worker 端再限制框選面積、可加 Rate Limiting。
@@ -78,4 +78,4 @@ npm run preview        # 預覽 production build
 ## 技術棧
 
 Vite · React · TypeScript · Leaflet · Zustand · Tailwind CSS · vite-plugin-pwa ·
-Web Worker · Cloudflare Workers AI
+Cloudflare Workers AI

@@ -932,7 +932,7 @@ function defaultLabel(n: number): string {
 
 const MODE_HINT: Record<TacticalMode, string> = {
   basic: '基本地圖：無疊層（點下方模式啟動；再點一下同一個即關閉回此畫面）',
-  orbit: '軌道預警模式：即時軌跡渲染中',
+  orbit: '軌道預警模式：衛星過境預報',
   sar: '雷達盲搜模式：框選海域以啟動 AI 辨識',
   optical: '沿岸光學模式：Sentinel-2 光學影像',
   ais: 'AIS 船舶識別模式：即時船位載入中',

@@ -17,31 +17,6 @@ export type TacticalMode =
   | 'envanim'
   | 'typhoon'
 
-/** Web Worker 回傳的單顆衛星即時狀態。 */
-export interface SatelliteState {
-  id: string
-  name: string
-  lat: number
-  lng: number
-  /** 高度（km），僅供顯示。 */
-  altKm: number
-  /** 最近的軌跡點（[lat, lng]），畫尾巴用。 */
-  trail: [number, number][]
-}
-
-/** 主執行緒 → Worker 的指令。 */
-export type WorkerCommand =
-  | { type: 'start' }
-  | { type: 'stop' }
-  | { type: 'setRate'; fps: number }
-
-/** Worker → 主執行緒的訊息。 */
-export type WorkerMessage = {
-  type: 'positions'
-  epoch: number
-  satellites: SatelliteState[]
-}
-
 /** 邊緣 AI 回傳的 GeoJSON FeatureCollection（船隻偵測結果）。 */
 export interface DetectionFeature {
   type: 'Feature'
