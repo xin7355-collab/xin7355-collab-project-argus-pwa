@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import { useTacticalStore } from '../store/tacticalStore'
-import { SatelliteCanvasLayer } from './SatelliteCanvasLayer'
 import { buildWmsConfig, LAYERS, isSentinelConfigured } from '../lib/sentinel'
 import {
   buildGibsTrueColor,
@@ -19,7 +18,6 @@ import type { DetectionCollection } from '../types'
  *   1. Base（OSM）      — 由 MapContainer 常駐
  *   2. Tile（WMS 影像） — 本檔管理，SAR / Optical 模式才掛
  *   3. Vector（AI 分析）— 本檔管理，SAR 模式的偵測框
- *   4. Canvas（動態）   — 本檔管理，Orbit 模式的即時衛星
  *
  * 互斥原則：切模式時，先把「不屬於新模式」的重度圖層卸載並清快取，
  * 再掛上新模式需要的圖層。任何時刻只有一種重度資源在跑。
@@ -37,7 +35,6 @@ export function LayerControl({ map }: { map: L.Map }) {
   // WMS 與一般 TileLayer(GIBS) 都是 TileLayer 的子/同類，用 TileLayer 兼容兩者。
   const tileRef = useRef<L.TileLayer | null>(null)
   const vectorRef = useRef<L.GeoJSON | null>(null)
-  const canvasRef = useRef<SatelliteCanvasLayer | null>(null)
 
   // 徹底卸載 WMS 影像層 + 清快取（防 Leaflet memory leak）
   const removeTile = () => {
@@ -56,21 +53,13 @@ export function LayerControl({ map }: { map: L.Map }) {
       vectorRef.current = null
     }
   }
-  const removeCanvas = () => {
-    if (canvasRef.current) {
-      map.removeLayer(canvasRef.current) // 觸發 onRemove → cancelAnimationFrame + worker.terminate
-      canvasRef.current = null
-    }
-  }
-
   // ── 主效果：模式 / 參數改變時重建圖層 ──────────────────
   useEffect(() => {
     // 每次都先全部卸載，確保乾淨、互斥
     removeTile()
     removeVector()
-    removeCanvas()
 
-    // 註：orbit 模式已改為「衛星過境預報」（純資訊面板，不掛地圖動畫層）。
+    // 註：orbit 模式為「衛星過境預報」（純資訊面板，不掛地圖動畫層）。
     // 觀測窗：光學 Sentinel-2 約每 5 天過境一次、雷達 Sentinel-1 更疏，用範圍取
     // 窗內最新一景，影像才不會忽有忽無（單一日期多半空白）。
     if (mode === 'sar') {
@@ -194,7 +183,6 @@ export function LayerControl({ map }: { map: L.Map }) {
       // 卸載元件時（例如熱重載）也要清乾淨
       removeTile()
       removeVector()
-      removeCanvas()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, maxCloudCover, observationDate, opticalSource, opticalRadar])
