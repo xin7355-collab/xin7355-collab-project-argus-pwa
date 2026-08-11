@@ -34,6 +34,7 @@ import { loadRepeaters, persistRepeaters, newRepeaterId, type Repeater } from '.
 import { loadLookouts, persistLookouts, newLookoutId, type Lookout } from '../lib/lookout'
 import { isSecureLockSet } from '../lib/secure'
 import { loadUiScale, persistUiScale, applyUiScale } from '../lib/uiScale'
+import { loadDistUnit, persistDistUnit, type DistUnit } from '../lib/units'
 
 /**
  * 全域戰術狀態 —— 整個 App 唯一的「真相來源 (single source of truth)」。
@@ -149,6 +150,8 @@ interface TacticalState {
   openTool: string | null
   /** 介面字體大小倍率（0.9/1.0/1.15/1.3）；改根 font-size 讓全站等比縮放。 */
   uiScale: number
+  /** 距離顯示單位。預設「浬」——海上作業通用單位。 */
+  distUnit: DistUnit
 
   // ── 領海基線/鄰接區參考線（跨模式覆蓋層）────────────
   showTerritorial: boolean
@@ -341,6 +344,7 @@ interface TacticalState {
   ) => void
   setOpenTool: (id: string | null) => void
   setUiScale: (v: number) => void
+  setDistUnit: (v: DistUnit) => void
   setBaseLayer: (id: BaseLayerId) => void
   setShowTerritorial: (v: boolean) => void
   setShowWind: (v: boolean) => void
@@ -509,6 +513,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   })(),
   openTool: null,
   uiScale: loadUiScale(),
+  distUnit: loadDistUnit(),
   showTerritorial: false,
   showWind: false,
   showWindFarms: false,
@@ -685,6 +690,10 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
     persistUiScale(v)
     applyUiScale(v)
     set({ uiScale: v })
+  },
+  setDistUnit: (v) => {
+    persistDistUnit(v)
+    set({ distUnit: v })
   },
   setBaseLayer: (id) => {
     try {

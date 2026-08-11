@@ -16,6 +16,8 @@ export function SettingsPanel() {
   const secureHasLock = useTacticalStore((s) => s.secureHasLock)
   const setSecureHasLock = useTacticalStore((s) => s.setSecureHasLock)
   const uiScale = useTacticalStore((s) => s.uiScale)
+  const distUnit = useTacticalStore((s) => s.distUnit)
+  const setDistUnit = useTacticalStore((s) => s.setDistUnit)
   const setUiScale = useTacticalStore((s) => s.setUiScale)
   const secureUnlocked = useTacticalStore((s) => s.secureUnlocked)
   const setSecureUnlocked = useTacticalStore((s) => s.setSecureUnlocked)
@@ -119,6 +121,33 @@ export function SettingsPanel() {
                 ))}
               </div>
               <p className="mt-1 text-[0.625rem] text-slate-500">整個介面文字與按鈕會一起等比放大，即時生效、記住設定。</p>
+            </div>
+
+            {/* 距離單位（全站共用；海上作業預設浬） */}
+            <div className="mb-3 rounded-lg border border-slate-700 bg-slate-900/40 p-2">
+              <div className="mb-1.5 text-xs font-semibold text-tactical-green">📏 距離單位</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {([
+                  { id: 'nm', label: '浬（預設）', hint: '海上通用' },
+                  { id: 'km', label: '公里 km', hint: '陸上習慣' },
+                ] as const).map((o) => (
+                  <button
+                    key={o.id}
+                    onClick={() => setDistUnit(o.id)}
+                    className={`flex flex-col rounded border py-2 font-semibold active:scale-95 ${
+                      distUnit === o.id
+                        ? 'border-tactical-cyan bg-tactical-cyan/15 text-tactical-cyan'
+                        : 'border-slate-600 text-slate-300'
+                    }`}
+                  >
+                    <span className="text-xs">{o.label}</span>
+                    <span className="text-[0.5625rem] font-normal text-slate-400">{o.hint}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-[0.625rem] text-slate-500">
+                雷達涵蓋、通訊覆蓋等距離顯示會跟著切換（1 浬 = 1.852 km）。
+              </p>
             </div>
 
             {/* #6 這些欄位到底是什麼 */}

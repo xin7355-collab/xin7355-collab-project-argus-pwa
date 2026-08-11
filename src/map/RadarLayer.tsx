@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import { useTacticalStore } from '../store/tacticalStore'
-import { coverageKm, radarColor, radarHorizonKm } from '../lib/radar'
+import { antennaTopM, radarCoverage, radarColor, radarHorizonKm, RADAR_DEFAULTS } from '../lib/radar'
+import { elevation } from '../lib/elevation'
+import { formatDist, formatDistBoth } from '../lib/units'
 import { WIND_FARMS } from '../lib/maritimeRef'
 
 /**
@@ -17,7 +19,22 @@ export function RadarLayer({ map }: { map: L.Map }) {
   const locked = useTacticalStore((s) => s.secureHasLock && !s.secureUnlocked)
   const setOpenTool = useTacticalStore((s) => s.setOpenTool)
   const setEditingId = useTacticalStore((s) => s.setRadarEditingId)
+  const updateRadarSite = useTacticalStore((s) => s.updateRadarSite)
+  const unit = useTacticalStore((s) => s.distUnit)
   const groupRef = useRef<L.LayerGroup | null>(null)
+
+  // 舊紀錄／手動建的站可能還沒有地面海拔 → 自動補查一次，山頂站才算得出正確大範圍。
+  useEffect(() => {
+    if (locked) return
+    for (const s of sites) {
+      if (Number.isFinite(s.siteElevM as number)) continue
+      elevation(s.lat, s.lng)
+        .then((el) => {
+          if (Number.isFinite(el as number)) updateRadarSite(s.id, { siteElevM: el as number })
+        })
+        .catch(() => {})
+    }
+  }, [sites, locked, updateRadarSite])
 
   useEffect(() => {
     if (!show || locked) return
@@ -25,9 +42,10 @@ export function RadarLayer({ map }: { map: L.Map }) {
     groupRef.current = g
     for (const s of sites) {
       const color = radarColor(s.type)
-      const km = coverageKm(s)
-      const horizon = radarHorizonKm(s.antennaM, s.targetM)
-      const capped = horizon > s.maxRangeKm
+      const cov = radarCoverage(s)
+      const km = cov.km
+      const horizon = cov.horizonKm
+      const limitText = cov.limit === 'power' ? '功率限制' : cov.limit === 'spec' ? '受量程限' : '視距限制'
 
       // 個別關閉的雷達站：不畫涵蓋/死角環，只留灰暗記號（點一下可編輯／開回）。
       if (s.off) {
@@ -48,8 +66,11 @@ export function RadarLayer({ map }: { map: L.Map }) {
       }
       // 小艇死角高亮：漁船(10m) 對比 小艇(2m) 涵蓋，凸顯只看得到大船的環＋縫。
       if (gap) {
-        const bigKm = Math.min(radarHorizonKm(s.antennaM, 10), s.maxRangeKm) // 漁船
-        const smallKm = Math.min(radarHorizonKm(s.antennaM, 2), s.maxRangeKm) // 小艇
+        // 兩者都用「天線頂海拔」與同一 k 值，才跟主涵蓋圈同一套標準。
+        const top = antennaTopM(s.siteElevM, s.antennaM)
+        const k = s.kFactor ?? RADAR_DEFAULTS.kFactor
+        const bigKm = Math.min(radarHorizonKm(top, 10, k), s.maxRangeKm) // 漁船
+        const smallKm = Math.min(radarHorizonKm(top, 2, k), s.maxRangeKm) // 小艇
         // 外環（漁船看得到，紅色淡填＝此範圍只保證看得到大船）
         L.circle([s.lat, s.lng], {
           radius: bigKm * 1000,
@@ -69,7 +90,7 @@ export function RadarLayer({ map }: { map: L.Map }) {
           fill: false,
         })
           .bindPopup(
-            `<b style="color:#f43f5e">小艇死角</b><br/>漁船(10m) 可及 ${bigKm.toFixed(1)}km、小艇(2m) 僅 ${smallKm.toFixed(1)}km<br/>` +
+            `<b style="color:#f43f5e">小艇死角</b><br/>漁船(10m) 可及 ${formatDist(bigKm, unit)}、小艇(2m) 僅 ${formatDist(smallKm, unit)}<br/>` +
               `<span style="color:#94a3b8;font-size:11px">紅色環內只保證看得到大船；相鄰站的小艇圈之間＝低矮目標死角</span>`,
           )
           .addTo(g)
@@ -93,7 +114,7 @@ export function RadarLayer({ map }: { map: L.Map }) {
       const marker = L.marker([s.lat, s.lng], {
         icon: L.divIcon({
           className: '',
-          html: `<div class="radar-marker" style="border-color:${color};color:${color}">📡<div class="radar-label" style="color:${color}">${s.name}<br/>${km.toFixed(1)}km</div></div>`,
+          html: `<div class="radar-marker" style="border-color:${color};color:${color}">📡<div class="radar-label" style="color:${color}">${s.name}<br/>${formatDist(km, unit)}</div></div>`,
           iconSize: [30, 30],
           iconAnchor: [15, 15],
         }),
@@ -105,7 +126,8 @@ export function RadarLayer({ map }: { map: L.Map }) {
       })
       marker
         .bindTooltip(
-          `📡 ${s.name}｜涵蓋 ${km.toFixed(1)}km（地平線 ${horizon.toFixed(1)}km${capped ? '·受量程限' : ''}）· 點我編輯`,
+          `📡 ${s.name}｜涵蓋 ${formatDistBoth(km, unit)}（${limitText}；地平線 ${formatDist(horizon, unit)}` +
+            `${Number.isFinite(cov.powerKm) ? `／功率 ${formatDist(cov.powerKm, unit)}` : ''}）· 點我編輯`,
           { direction: 'top', offset: [0, -14] },
         )
         .addTo(g)
@@ -115,7 +137,7 @@ export function RadarLayer({ map }: { map: L.Map }) {
       map.removeLayer(g)
       groupRef.current = null
     }
-  }, [show, sites, gap, terrainRings, showTerrain, locked, setOpenTool, setEditingId, map])
+  }, [show, sites, gap, terrainRings, showTerrain, locked, setOpenTool, setEditingId, unit, map])
 
   return null
 }
