@@ -17,6 +17,7 @@ import {
 } from '../lib/radio'
 import { terrainCoverage } from '../lib/terrain'
 import { elevation } from '../lib/elevation'
+import { formatDist } from '../lib/units'
 import { antennaTopM } from '../lib/radio'
 import { WIND_FARMS } from '../lib/maritimeRef'
 import { saveOrShareText, saveResultMsg } from '../lib/fileShare'
@@ -117,6 +118,7 @@ export function RadioPanel() {
   const setTerrainBusy = useTacticalStore((s) => s.setTerrainBusy)
   const setTerrainRing = useTacticalStore((s) => s.setTerrainRing)
   const setStatus = useTacticalStore((s) => s.setStatus)
+  const unit = useTacticalStore((s) => s.distUnit)
   const openTool = useTacticalStore((s) => s.openTool)
   const setOpenTool = useTacticalStore((s) => s.setOpenTool)
   const open = openTool === 'radio'
@@ -596,8 +598,8 @@ export function RadioPanel() {
 
               {/* 即時預估 */}
               <div className="rounded bg-slate-800/60 p-1.5 text-[0.6875rem] text-slate-200">
-                預估覆蓋 <b style={{ color: b.color }}>{cov.km.toFixed(1)} km</b>
-                <span className="text-slate-500">（{cov.limit === 'los' ? '視距限制' : '功率限制'}：視距 {cov.losKm.toFixed(1)}km / 功率 {cov.powerKm.toFixed(0)}km）</span>
+                預估覆蓋 <b style={{ color: b.color }}>{formatDist(cov.km, unit)}</b>
+                <span className="text-slate-500">（{cov.limit === 'los' ? '視距限制' : '功率限制'}：視距 {formatDist(cov.losKm, unit)} / 功率 {formatDist(cov.powerKm, unit, 0)}）</span>
               </div>
 
               <div className="flex gap-1.5">
@@ -853,7 +855,7 @@ export function RadioPanel() {
                           <span className="truncate text-xs font-semibold text-slate-200">
                             📻 {r.name}{r.off && <span className="ml-1 text-[0.5625rem] text-slate-500">（已關閉）</span>}
                           </span>
-                          <span className="text-[0.625rem] text-slate-400">{r.freqMHz}MHz/{r.powerW}W/天線{r.antennaM}m｜覆蓋 {c.km.toFixed(1)}km</span>
+                          <span className="text-[0.625rem] text-slate-400">{r.freqMHz}MHz/{r.powerW}W/天線{r.antennaM}m｜覆蓋 {formatDist(c.km, unit)}</span>
                         </div>
                       </div>
                       <div className="ml-2 flex shrink-0 items-center gap-2">
