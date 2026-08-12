@@ -64,19 +64,29 @@ jobs:
           VITE_EDGE_AI_URL: ${{ secrets.VITE_EDGE_AI_URL }}
           VITE_AISSTREAM_KEY: ${{ secrets.VITE_AISSTREAM_KEY }}
 
+      # 直接跑專案自己釘住的 wrangler，不用 cloudflare/wrangler-action。
+      # 原因：那個 action 會拿自己的預設版本(3.90)去比對，比不過就強制裝 3.90，
+      # 而 wrangler 3 不支援「純靜態資產 Worker」(只有 assets、沒有 main)，
+      # 會噴 "Missing entry-point" 而失敗。改為直接呼叫 devDependencies 裡的
+      # wrangler 4，版本由 package-lock.json 決定，CI 與本機一致。
+      # wrangler 原生讀這兩個環境變數，不需要額外登入步驟。
       - name: 部署到 Cloudflare Worker
-        id: deploy
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          npx wrangler deploy 2>&1 | tee deploy.log
+          # 從輸出撈 workers.dev 網址；撈不到不讓步驟失敗（部署本身已經成功）
+          url="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1 || true)"
+          echo "DEPLOY_URL=$url" >> "$GITHUB_ENV"
 
       # 把網址印在 Actions 的 Summary 頁，部署完直接點就能開，
       # 不用再去 Cloudflare 後台翻。
       - name: 顯示部署網址
         if: success()
         run: |
-          url="${{ steps.deploy.outputs.deployment-url }}"
+          url="$DEPLOY_URL"
           {
             echo "## ✅ 部署完成"
             echo ""
