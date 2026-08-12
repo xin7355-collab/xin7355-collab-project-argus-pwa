@@ -1,5 +1,16 @@
 # 🚀 部署指南（拿到可在手機開的 live 網址）
 
+> [!CAUTION]
+> **舊網址 `https://project-argus-pwa.pages.dev` 已停用，不要再看那個。**
+> 那是接在「已失效的舊 GitHub repo」上的 Cloudflare **Pages** 專案，
+> 不會再更新，內容永遠停在舊版。
+>
+> **現行網址：`https://argus-app.<你的子網域>.workers.dev`**（Cloudflare Worker）
+>
+> Pages 與 Worker 在 Cloudflare 上是兩個獨立產品：部署 Worker **不會**讓
+> pages.dev 跟著更新。之所以選 Worker，是因為 Cloudflare Access 鎖得住
+> Worker、但鎖不住免費的 pages.dev（見 `wrangler.jsonc` 註解）。
+
 > [!IMPORTANT]
 > **目前正式部署方式：Cloudflare Worker，且已自動化。**
 > 合併進 `main` 後 GitHub Actions 會自動 build 並部署（見
