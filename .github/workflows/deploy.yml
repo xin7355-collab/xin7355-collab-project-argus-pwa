@@ -37,9 +37,18 @@ jobs:
       # 這個本來要解決的問題，紅燈才看得見。
       - name: 檢查部署所需 secret
         run: |
+          # 先把前後／中間的空白與換行清掉再用。手機複製 token 很容易夾帶換行，
+          # 那會讓 Cloudflare 回 6003「Invalid format for Authorization header」，
+          # 而錯誤訊息完全看不出是空白造成的。清乾淨後再驗格式。
+          # 清理後的值仍是機密，先 add-mask 確保不會出現在 log。
+          tok="$(printf '%s' '${{ secrets.CLOUDFLARE_API_TOKEN }}' | tr -d '[:space:]')"
+          acct="$(printf '%s' '${{ secrets.CLOUDFLARE_ACCOUNT_ID }}' | tr -d '[:space:]')"
+          [ -n "$tok" ] && echo "::add-mask::$tok"
+          [ -n "$acct" ] && echo "::add-mask::$acct"
+
           missing=""
-          [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] && missing="$missing CLOUDFLARE_API_TOKEN"
-          [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          [ -z "$tok" ] && missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -z "$acct" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
           if [ -n "$missing" ]; then
             echo "::error::缺少 secret:$missing"
             echo "請到 Settings → Secrets and variables → Actions → New repository secret 新增。"
@@ -53,19 +62,41 @@ jobs:
           # 格式不符會讓 wrangler 噴 [code: 7003]「Could not route to ...」，
           # 那個訊息看不出是 ID 有問題，所以在這裡先攔下來講清楚。
           # 註：不印出實際值——本 repo 為公開，log 任何人都看得到。
-          id='${{ secrets.CLOUDFLARE_ACCOUNT_ID }}'
-          if ! printf '%s' "$id" | grep -qE '^[0-9a-fA-F]{32}$'; then
+          if ! printf '%s' "$acct" | grep -qE '^[0-9a-fA-F]{32}$'; then
             echo "::error::CLOUDFLARE_ACCOUNT_ID 格式不正確（應為 32 個十六進位字元，例 1a2b3c...）"
-            echo "實際長度：$(printf '%s' "$id" | wc -c) 字元（正確應為 32）"
+            echo "去除空白後長度：$(printf '%s' "$acct" | wc -c) 字元（正確應為 32）"
             echo ""
             echo "怎麼拿到正確的值："
             echo "  Cloudflare 後台 → 左側 Compute → Workers & Pages"
             echo "  進去後看網址列：dash.cloudflare.com/<這一段32碼>/workers-and-pages"
-            echo "  只複製那 32 碼，不要含網址其他部分、不要有前後空白或換行"
+            echo "  只複製那 32 碼，不要含網址其他部分"
             echo ""
-            echo "常見貼錯：貼成整段網址、貼成 Zone ID（那是網域用的，不是帳號）、複製時多帶了換行"
+            echo "常見貼錯：貼成整段網址、貼成 Zone ID（那是網域用的，不是帳號）"
             exit 1
           fi
+
+          # API Token 格式檢查：Cloudflare token 為 40 個 [A-Za-z0-9_-] 字元。
+          # 空白已在上面清掉，所以這裡若仍不符，代表是別種貼錯：
+          # 多貼了 "Bearer " 前綴、複製到一半、貼成 Global API Key（那是 37 碼十六進位，
+          # 且需搭配 email，wrangler 不吃）。
+          if ! printf '%s' "$tok" | grep -qE '^[A-Za-z0-9_-]{40}$'; then
+            echo "::error::CLOUDFLARE_API_TOKEN 格式不正確（應為 40 個字元，僅含英數字、底線、連字號）"
+            echo "去除空白後長度：$(printf '%s' "$tok" | wc -c) 字元（正確應為 40）"
+            echo ""
+            echo "怎麼拿到正確的值："
+            echo "  Cloudflare 後台 → 右上角人頭 → My Profile → API Tokens"
+            echo "  → Create Token → 範本選「Edit Cloudflare Workers」→ Use template"
+            echo "  → Continue to summary → Create Token → 複製那串（只會顯示這一次）"
+            echo ""
+            echo "常見貼錯：前面多了 Bearer、複製到一半、貼成 Global API Key（那個不能用）"
+            exit 1
+          fi
+
+          # 通過檢查 → 把清乾淨的值傳給後續步驟使用（已 add-mask，不會外洩到 log）
+          {
+            echo "CF_API_TOKEN=$tok"
+            echo "CF_ACCOUNT_ID=$acct"
+          } >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:
@@ -91,8 +122,9 @@ jobs:
       # wrangler 原生讀這兩個環境變數，不需要額外登入步驟。
       - name: 部署到 Cloudflare Worker
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # 用 preflight 清理並驗過格式的值，不是原始 secret
+          CLOUDFLARE_API_TOKEN: ${{ env.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CF_ACCOUNT_ID }}
         run: |
           set -o pipefail
           npx wrangler deploy 2>&1 | tee deploy.log
