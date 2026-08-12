@@ -48,6 +48,25 @@ jobs:
             exit 1
           fi
 
+          # Account ID 格式檢查：必須是 32 個十六進位字元。
+          # 擋掉最常見的貼錯——整段網址、前後空白/換行、複製到一半、貼成帳號名稱。
+          # 格式不符會讓 wrangler 噴 [code: 7003]「Could not route to ...」，
+          # 那個訊息看不出是 ID 有問題，所以在這裡先攔下來講清楚。
+          # 註：不印出實際值——本 repo 為公開，log 任何人都看得到。
+          id='${{ secrets.CLOUDFLARE_ACCOUNT_ID }}'
+          if ! printf '%s' "$id" | grep -qE '^[0-9a-fA-F]{32}$'; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID 格式不正確（應為 32 個十六進位字元，例 1a2b3c...）"
+            echo "實際長度：$(printf '%s' "$id" | wc -c) 字元（正確應為 32）"
+            echo ""
+            echo "怎麼拿到正確的值："
+            echo "  Cloudflare 後台 → 左側 Compute → Workers & Pages"
+            echo "  進去後看網址列：dash.cloudflare.com/<這一段32碼>/workers-and-pages"
+            echo "  只複製那 32 碼，不要含網址其他部分、不要有前後空白或換行"
+            echo ""
+            echo "常見貼錯：貼成整段網址、貼成 Zone ID（那是網域用的，不是帳號）、複製時多帶了換行"
+            exit 1
+          fi
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
