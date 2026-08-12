@@ -7,6 +7,10 @@
   // 純靜態資源 Worker（無自訂程式碼）：只需 assets.directory 指向 build 產物。
   "name": "argus-app",
   "compatibility_date": "2025-06-01",
+  // 明確開啟 workers.dev 公開網址（部署後為 argus-app.<你的子網域>.workers.dev）。
+  // 雖然這是預設值，但寫出來才不會出現「部署成功卻沒有網址可開」而查不到原因。
+  // 之後若要綁自訂網域或改走 Access 鎖，再另外設 routes。
+  "workers_dev": true,
   "assets": {
     "directory": "./dist",
     // 單頁式應用：找不到的路徑一律回 index.html（前端自行處理）。

@@ -65,7 +65,27 @@ jobs:
           VITE_AISSTREAM_KEY: ${{ secrets.VITE_AISSTREAM_KEY }}
 
       - name: 部署到 Cloudflare Worker
+        id: deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # 把網址印在 Actions 的 Summary 頁，部署完直接點就能開，
+      # 不用再去 Cloudflare 後台翻。
+      - name: 顯示部署網址
+        if: success()
+        run: |
+          url="${{ steps.deploy.outputs.deployment-url }}"
+          {
+            echo "## ✅ 部署完成"
+            echo ""
+            if [ -n "$url" ]; then
+              echo "**網址：** $url"
+            else
+              echo "網址請見上一步 wrangler 輸出（或 Cloudflare 後台 → Workers & Pages → argus-app）。"
+            fi
+            echo ""
+            echo "確認手機拿到新版：雷達面板右上角有「浬 / km」切換鈕即為新版。"
+            echo "若仍是舊版，把 App 從多工列滑掉重開；再不行就刪掉主畫面圖示重新加入。"
+          } >> "$GITHUB_STEP_SUMMARY"
