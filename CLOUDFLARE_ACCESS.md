@@ -11,10 +11,16 @@
 ## Part A — 把 App 掛上去（免費）
 
 > [!WARNING]
-> **本節的 Pages 做法已被取代。** 後來改為部署成 Cloudflare **Worker**，原因是
-> Access 鎖得住 Worker、卻鎖不住免網域的 `pages.dev`（見 `wrangler.jsonc` 註解）。
+> **本節的 Pages 做法已被取代，`project-argus-pwa.pages.dev` 已停用。**
+> 後來改為部署成 Cloudflare **Worker**（`argus-app`），原因正是本文件的目的：
+> Access 鎖得住 Worker、卻鎖不住免網域的 `pages.dev`。
 > 現行做法是合併進 `main` 由 GitHub Actions 自動部署 Worker，見 `DEPLOY.md`。
-> 下面的 Pages 步驟保留供對照，**若你走 Worker 就跳過 Part A，直接看 Part B**。
+>
+> **要上鎖的對象是 Worker `argus-app`，不是 Pages 專案。**
+> Part B 在 Zero Trust → Access → 自託管 挑應用時，選 Workers 清單裡的
+> `argus-app`。
+>
+> 下面的 Pages 步驟保留供對照，**直接跳過 Part A 看 Part B**。
 
 ### （已取代）Cloudflare Pages 做法
 
