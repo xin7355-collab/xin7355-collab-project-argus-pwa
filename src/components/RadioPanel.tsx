@@ -353,6 +353,9 @@ export function RadioPanel() {
             targetM: r.rxM,
             maxKm: coverage(r).km,
             kFactor: r.kFactor,
+            // 帶頻率 → 額外要求 Fresnel 60% 淨空。VHF 波長長、Fresnel 區大
+            // （145MHz 走 40km 需淨空約 86m），擦過稜線的鏈路會被正確判為不可用。
+            freqMHz: r.freqMHz,
           })
           if (ring.length >= 3) {
             setTerrainRing(r.id, ring)
