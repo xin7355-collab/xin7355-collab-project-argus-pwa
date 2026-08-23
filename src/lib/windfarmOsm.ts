@@ -14,6 +14,32 @@ export interface OsmWindFarm {
   status: string
   ring: [number, number][]
   center: [number, number]
+  /** 場內風機（若查得到）。用於雷達遮蔽與 Doppler 雜波研判。 */
+  turbines?: WindTurbine[]
+  /** 場內風機葉尖高度中位數(m)；查不到高度標籤時為 undefined。 */
+  tipHeightM?: number
+}
+
+/** 單支風機。OSM 標籤覆蓋率不一，height/rotor 可能缺。 */
+export interface WindTurbine {
+  lat: number
+  lng: number
+  /** 塔架高(m)，OSM `height`。 */
+  heightM?: number
+  /** 轉子直徑(m)，OSM `rotor:diameter`。 */
+  rotorM?: number
+}
+
+/**
+ * 葉尖高度(m) = 塔架高 + 轉子半徑。這才是雷達遮蔽該用的高度——
+ * 只用塔架高會低估，因為葉片轉到最高點時比塔頂還高一個半徑。
+ * 兩者皆缺時回 undefined（不猜），由呼叫端決定要不要用預設值。
+ */
+export function tipHeight(t: WindTurbine): number | undefined {
+  if (t.heightM == null && t.rotorM == null) return undefined
+  const h = t.heightM ?? 0
+  const r = (t.rotorM ?? 0) / 2
+  return h + r || undefined
 }
 
 const BBOX = '22.4,119.2,25.7,121.8' // 台灣西部外海
@@ -24,6 +50,16 @@ const QUERY =
   `way["seamark:type"="wind_farm"](${BBOX});` +
   `relation["seamark:type"="wind_farm"](${BBOX});` +
   `);out geom;`
+
+/**
+ * 單支風機查詢。OSM 上離岸風機多為 node，少數以 way 描繪基座。
+ * 取 height 與 rotor:diameter 以推算葉尖高度（雷達遮蔽要用的是葉尖高，非塔架高）。
+ */
+const TURBINE_QUERY =
+  `[out:json][timeout:60];(` +
+  `node["power"="generator"]["generator:source"="wind"](${BBOX});` +
+  `way["power"="generator"]["generator:source"="wind"](${BBOX});` +
+  `);out center tags;`
 
 const ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
@@ -111,4 +147,62 @@ export async function fetchWindFarmsOsm(): Promise<OsmWindFarm[]> {
     }
   }
   return []
+}
+
+/** 解析 OSM 的長度標籤（可能寫成 "120"、"120 m"、"120m"）。 */
+function parseLenM(v: unknown): number | undefined {
+  if (typeof v !== 'string' && typeof v !== 'number') return undefined
+  const n = parseFloat(String(v))
+  return Number.isFinite(n) && n > 0 ? n : undefined
+}
+
+/** 抓 OSM 單支風機（含高度標籤）；失敗回空陣列。 */
+export async function fetchWindTurbinesOsm(): Promise<WindTurbine[]> {
+  for (const ep of ENDPOINTS) {
+    try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 15000)
+      const res = await fetch(ep, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(TURBINE_QUERY),
+        signal: ctrl.signal,
+      })
+      clearTimeout(timer)
+      if (!res.ok) continue
+      const data = await res.json()
+      const out: WindTurbine[] = []
+      for (const el of data.elements ?? []) {
+        // node 直接有 lat/lon；way 用 out center 取得 center.lat/lon
+        const la = el.lat ?? el.center?.lat
+        const lo = el.lon ?? el.center?.lon
+        if (typeof la !== 'number' || typeof lo !== 'number') continue
+        const tags = el.tags ?? {}
+        out.push({
+          lat: la,
+          lng: lo,
+          heightM: parseLenM(tags.height),
+          rotorM: parseLenM(tags['rotor:diameter']),
+        })
+      }
+      if (out.length) return out
+    } catch {
+      /* try next endpoint */
+    }
+  }
+  return []
+}
+
+/**
+ * 把風機併入所屬風場（取離場中心最近者，門檻 25km），並算出該場葉尖高度中位數。
+ * 用中位數而非平均：OSM 偶有明顯離譜的標註，中位數比較耐髒資料。
+ */
+export function attachTurbines(farms: OsmWindFarm[], turbines: WindTurbine[]): OsmWindFarm[] {
+  if (!farms.length || !turbines.length) return farms
+  return farms.map((f) => {
+    const mine = turbines.filter((t) => km(t.lat, t.lng, f.center[0], f.center[1]) < 25)
+    const tips = mine.map(tipHeight).filter((x): x is number => x != null).sort((a, b) => a - b)
+    const tipHeightM = tips.length ? tips[Math.floor(tips.length / 2)] : undefined
+    return { ...f, turbines: mine, tipHeightM }
+  })
 }

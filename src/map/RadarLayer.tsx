@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import { useTacticalStore } from '../store/tacticalStore'
 import { antennaTopM, radarCoverage, radarColor, radarHorizonKm, RADAR_DEFAULTS } from '../lib/radar'
@@ -6,6 +6,8 @@ import { elevation } from '../lib/elevation'
 import { formatDist, formatDistBoth } from '../lib/units'
 import { lobeStructure } from '../lib/seaPropagation'
 import { WIND_FARMS } from '../lib/maritimeRef'
+import { fetchWindFarmsOsm, fetchWindTurbinesOsm, attachTurbines, type OsmWindFarm } from '../lib/windfarmOsm'
+import { windShadowFor, shadowPolygon, destPoint, DEFAULT_TIP_HEIGHT_M } from '../lib/windRadar'
 
 /**
  * 雷達涵蓋圖層：把使用者自建的雷達站畫成涵蓋圈（依雷達地平線＋目標高度）。
@@ -169,43 +171,119 @@ export function RadarLayer({ map }: { map: L.Map }) {
  */
 export function WindClutterLayer({ map }: { map: L.Map }) {
   const show = useTacticalStore((s) => s.showWindClutter)
+  const sites = useTacticalStore((s) => s.radarSites)
   const locked = useTacticalStore((s) => s.secureHasLock && !s.secureUnlocked)
+  const unit = useTacticalStore((s) => s.distUnit)
   const groupRef = useRef<L.LayerGroup | null>(null)
+  // OSM 風場邊界＋風機高度。抓不到就退回內建示意範圍（見下方 fallback）。
+  const [farms, setFarms] = useState<OsmWindFarm[] | null>(null)
+
+  useEffect(() => {
+    if (!show || locked) return
+    let cancelled = false
+    Promise.all([fetchWindFarmsOsm(), fetchWindTurbinesOsm()])
+      .then(([f, t]) => {
+        if (!cancelled && f.length) setFarms(attachTurbines(f, t))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [show, locked])
 
   useEffect(() => {
     if (!show || locked) return
     const g = L.layerGroup().addTo(map)
     groupRef.current = g
-    for (const wf of WIND_FARMS) {
-      const dLat = wf.radiusKm / 111
-      const dLng = wf.radiusKm / (111 * Math.cos((wf.lat * Math.PI) / 180))
-      L.rectangle(
-        [
-          [wf.lat - dLat, wf.lng - dLng],
-          [wf.lat + dLat, wf.lng + dLng],
-        ],
-        { color: '#f43f5e', weight: 1.5, opacity: 0.7, dashArray: '3 3', fillColor: '#f43f5e', fillOpacity: 0.14 },
-      )
+
+    // 沒有 OSM 資料時，用內建示意中心＋半徑組出概略多邊形（圓），
+    // 至少比原本的長方形貼近實際範圍。
+    const list: OsmWindFarm[] =
+      farms ??
+      WIND_FARMS.map((wf) => ({
+        name: wf.name,
+        status: wf.status,
+        center: [wf.lat, wf.lng] as [number, number],
+        ring: Array.from({ length: 24 }, (_, i) => destPoint(wf.lat, wf.lng, (i / 24) * 360, wf.radiusKm)),
+      }))
+
+    for (const wf of list) {
+      const tipTxt =
+        wf.tipHeightM != null
+          ? `葉尖高約 ${Math.round(wf.tipHeightM)}m（OSM ${wf.turbines?.length ?? 0} 支風機）`
+          : `葉尖高未知，以 ${DEFAULT_TIP_HEIGHT_M}m 推定`
+
+      // ── 效應一：Doppler 假回跡（風場範圍本身，與高度無關）──
+      L.polygon(wf.ring, {
+        color: '#f43f5e',
+        weight: 1.5,
+        opacity: 0.75,
+        dashArray: '3 3',
+        fillColor: '#f43f5e',
+        fillOpacity: 0.14,
+      })
         .bindPopup(
-          `<b style="color:#f43f5e">📡⚠ 雷達雜波區</b><br/>${wf.name}<br/>` +
-            `<span style="color:#94a3b8;font-size:11px">風機造成假回波與後方遮蔽，此區雷達偵測可信度低；建議 AIS/光學交叉查證</span>`,
+          `<b style="color:#f43f5e">📡⚠ Doppler 假回跡區</b><br/>${wf.name}<br/>` +
+            `<span style="color:#94a3b8;font-size:11px">葉尖速度可達 80–90m/s，都卜勒頻移與移動船隻同量級，` +
+            `MTI 濾不掉 → 此區可能出現<b>不存在的移動目標</b>。與高度無關，雷達再高也照樣發生。<br/>` +
+            `建議 AIS／光學交叉查證。<br/>${tipTxt}</span>`,
         )
         .addTo(g)
-      L.marker([wf.lat, wf.lng], {
+
+      L.marker(wf.center, {
         icon: L.divIcon({
           className: '',
-          html: `<div class="clutter-label">📡⚠ 雜波</div>`,
-          iconSize: [56, 16],
-          iconAnchor: [28, 8],
+          html: `<div class="clutter-label">📡⚠ 假回跡</div>`,
+          iconSize: [64, 16],
+          iconAnchor: [32, 8],
         }),
       }).addTo(g)
+
+      // ── 效應二：塔架幾何遮蔽（依各雷達站位置與天線高分別計算）──
+      for (const s of sites) {
+        if (s.off) continue
+        const cov = radarCoverage(s)
+        const sh = windShadowFor(
+          {
+            lat: s.lat,
+            lng: s.lng,
+            antennaTopM: antennaTopM(s.siteElevM, s.antennaM),
+            targetM: s.targetM,
+            maxKm: cov.km,
+            kFactor: s.kFactor ?? RADAR_DEFAULTS.kFactor,
+          },
+          wf,
+        )
+        if (!sh) continue
+        L.polygon(shadowPolygon({ lat: s.lat, lng: s.lng }, sh), {
+          color: '#64748b',
+          weight: 1,
+          opacity: 0.6,
+          fillColor: '#0f172a',
+          fillOpacity: 0.35,
+        })
+          .bindPopup(
+            `<b style="color:#94a3b8">🌑 風機遮蔽（${s.name} 視角）</b><br/>` +
+              `${wf.name} 後方 ${formatDist(sh.startKm, unit)} – ${formatDist(sh.endKm, unit)}<br/>` +
+              `<span style="color:#94a3b8;font-size:11px">` +
+              (sh.fullyShadowed
+                ? `<b>後方整段被遮</b>，${s.targetM}m 目標看不到。` +
+                  (sh.antennaBelowTip
+                    ? `此站天線頂 ${Math.round(antennaTopM(s.siteElevM, s.antennaM))}m 低於葉尖 ${Math.round(sh.tipM)}m。`
+                    : `此站天線頂雖高於葉尖，但朝 ${s.targetM}m 低目標的視線是下降的，` +
+                      `到風場處已降到葉尖以下，涵蓋範圍內都沒再高上去。`)
+                : `僅遮蔽近段，更遠處視線已高過葉尖而恢復。`) +
+              `<br/>${sh.tipEstimated ? '⚠ 葉尖高為推定值（OSM 無高度標籤）' : ''}</span>`,
+          )
+          .addTo(g)
+      }
     }
     return () => {
       g.clearLayers()
       map.removeLayer(g)
       groupRef.current = null
     }
-  }, [show, locked, map])
+  }, [show, locked, farms, sites, unit, map])
 
   return null
 }
