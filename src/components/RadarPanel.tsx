@@ -149,6 +149,12 @@ export function RadarPanel() {
           antennaM: s.antennaM,
           targetM: s.targetM,
           maxKm: coverageKm(s),
+          // 傳播條件也要帶進地形判定，否則切「夜間逆溫」時涵蓋圈變遠、
+          // 地形形狀卻還是用日間折射算的，兩者對不起來。
+          kFactor: s.kFactor ?? RADAR_DEFAULTS.kFactor,
+          // X 波段波長短，Fresnel 區小（9.4GHz 走 40km 僅需淨空約 11m），
+          // 影響遠不如 VHF，但同一套公式帶進去即可，不必為雷達另寫一套。
+          freqMHz: (s.freqGhz ?? RADAR_DEFAULTS.freqGhz) * 1000,
         })
         if (ring.length >= 3) setRadarTerrainRing(s.id, ring)
       }

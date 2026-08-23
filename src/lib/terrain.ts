@@ -76,7 +76,8 @@ export async function elevationBatch(pts: [number, number][]): Promise<number[]>
 
 export interface TerrainOpts {
   bearings?: number
-  stepKm?: number
+  /** 每方位取樣點數。 */
+  steps?: number
 }
 
 /** 地形遮蔽計算輸入（通用：無線電中繼台或雷達站皆可）。 */
@@ -91,6 +92,25 @@ export interface TerrainInput {
   maxKm: number
   /** 等效地球半徑因子（大氣折射）：日間 4/3、夜間海面逆溫更大。預設 4/3。 */
   kFactor?: number
+  /**
+   * 工作頻率(MHz)。有給就額外要求第一 Fresnel 區 60% 淨空，而不是只看「有沒有擋到」。
+   * 純幾何視線會把「擦過稜線」判為暢通，實際上繞射損耗很大——VHF 尤其明顯：
+   *   145MHz 走 40km，F1 半徑約 144m，需淨空 86m；
+   *   X 波段 9.4GHz 同距離只需 11m（波長短，Fresnel 區小）。
+   * 因此同一套實作用頻率驅動，對無線電與雷達自動給出合理的嚴格度。
+   * 不給則退回純幾何判定（與舊行為相同）。
+   */
+  freqMHz?: number
+}
+
+/**
+ * 第一 Fresnel 區半徑(m)。d1/d2 為該點到兩端的距離(km)，D 為總路徑長(km)。
+ *   F1 = 17.32 × √( d1·d2 / (f_GHz · D) )
+ */
+export function fresnelRadiusM(d1Km: number, d2Km: number, freqMHz: number, totalKm: number): number {
+  const fGHz = Math.max(0.001, freqMHz / 1000)
+  if (!(totalKm > 0)) return 0
+  return 17.32 * Math.sqrt(Math.max(0, (d1Km * d2Km) / (fGHz * totalKm)))
 }
 
 /**
@@ -101,22 +121,36 @@ export async function terrainCoverage(inp: TerrainInput, opts: TerrainOpts = {})
   const { lat, lng, antennaM, targetM, maxKm } = inp
   const k = inp.kFactor ?? 4 / 3
   if (!(maxKm > 0)) return []
-  // 取樣密度（約 ~240 點 / 3 批請求/站，elevationBatch 分批+退避重試）：
-  //   • 方位 24 條（每 15°）：角解析度抓「放射狀窄谷」盲區。
-  //   • 沿線步數固定、stepKm = maxKm/steps → 一定取樣到「完整涵蓋距離」。
-  //     ⚠ 千萬不要把 stepKm 設上限（如 2.5km），否則長程站（如山頂台 240km）
-  //       會被硬切成 steps×stepKm 的小範圍——這是 v2.30 的退化，已修正。
-  const bearings = opts.bearings ?? 24
-  const stepKm = opts.stepKm ?? Math.max(0.3, maxKm / 10)
-  const steps = Math.max(4, Math.min(14, Math.round(maxKm / stepKm)))
+
+  // ── 取樣密度（36 方位 × 28 點 ≈ 1009 點 / 11 批請求，elevationBatch 分批+退避）──
+  //
+  // 舊版是「等距」取樣：stepKm = maxKm/10，最多 14 步。問題在於第一個取樣點就落在
+  // maxKm/10 —— 240km 的高山站，第一點在 24km 外，站台自己旁邊那座山、腳下的岬角
+  // 完全沒被取樣到。而遮蔽多半正是由近處地形決定的，等於把最關鍵的部分漏掉。
+  //
+  // 改為冪次分佈（d ∝ (s/steps)^1.6）：近場密、遠場疏。理由是
+  //   • 近場：視線仰角變化快，一座近山就能擋掉整個方位，需要高解析度；
+  //   • 遠場：地球曲率已把視線抬高（240km 處抬升約 470m），要擋住得是很高的地形，
+  //     且同樣的角度誤差在遠處對應的高度差較大，密集取樣的邊際效益低。
+  //
+  // 對 240km 站：首點 24km → 1.16km（改善約 20 倍）。
+  //
+  // ⚠ 已知殘留限制：遠場末段間距仍約 13km（240km 站），寬度小於此的離島／礁岩
+  //   仍可能落在兩點之間而未被偵測到。要根治需大幅增加請求數（會踩免費高程 API
+  //   限流，v2.32 已因此吃過虧），或改用靜態離島圖層另行判定。
+  const bearings = opts.bearings ?? 36
+  const steps = opts.steps ?? 28
+  const SPREAD = 1.6
+
+  // 各取樣點距站台的距離(km)，近密遠疏
+  const distKm: number[] = []
+  for (let s = 1; s <= steps; s++) distKm.push(maxKm * Math.pow(s / steps, SPREAD))
 
   // 取樣點：第 0 個是站台本身，其後每方位 steps 個
   const pts: [number, number][] = [[lat, lng]]
   for (let b = 0; b < bearings; b++) {
     const brg = (b / bearings) * 360
-    for (let s = 1; s <= steps; s++) {
-      pts.push(dest(lat, lng, brg, s * stepKm * 1000))
-    }
+    for (const d of distKm) pts.push(dest(lat, lng, brg, d * 1000))
   }
 
   const elevs = await elevationBatch(pts)
@@ -134,14 +168,19 @@ export async function terrainCoverage(inp: TerrainInput, opts: TerrainOpts = {})
 
     let reachM = 0
     for (let s = 1; s <= steps; s++) {
-      const dM = s * stepKm * 1000
+      const dKm = distKm[s - 1]
+      const dM = dKm * 1000
       const Hr = g[s - 1] + targetM // 目標/收訊端高（海拔）
       let clear = true
       for (let m = 1; m < s; m++) {
-        const dmM = m * stepKm * 1000
+        const dmKm = distKm[m - 1]
+        const dmM = dmKm * 1000
         const losH = H0 + ((Hr - H0) * dmM) / dM // 視線在 dm 處的海拔高度
         const bulge = (dmM * (dM - dmM)) / (2 * k * R_EARTH) // 地球曲率抬升（隨 k 變）
-        if (g[m - 1] + bulge > losH) {
+        // 有給頻率 → 要求第一 Fresnel 區 60% 淨空（純幾何會把擦過稜線判為暢通，
+        // 但實際繞射損耗很大）。沒給就退回純幾何，與舊行為一致。
+        const need = inp.freqMHz ? 0.6 * fresnelRadiusM(dmKm, dKm - dmKm, inp.freqMHz, dKm) : 0
+        if (g[m - 1] + bulge + need > losH) {
           clear = false
           break
         }
