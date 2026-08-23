@@ -4,6 +4,7 @@ import { useTacticalStore } from '../store/tacticalStore'
 import { antennaTopM, radarCoverage, radarColor, radarHorizonKm, RADAR_DEFAULTS } from '../lib/radar'
 import { elevation } from '../lib/elevation'
 import { formatDist, formatDistBoth } from '../lib/units'
+import { lobeStructure } from '../lib/seaPropagation'
 import { WIND_FARMS } from '../lib/maritimeRef'
 
 /**
@@ -94,6 +95,26 @@ export function RadarLayer({ map }: { map: L.Map }) {
               `<span style="color:#94a3b8;font-size:11px">紅色環內只保證看得到大船；相鄰站的小艇圈之間＝低矮目標死角</span>`,
           )
           .addTo(g)
+
+        // 多路徑零陷環：即使在涵蓋圈內、視距也通，落在這些距離的低矮目標仍可能
+        // 收不到回波。與「圈縫死角」是不同機制，因此用不同線型（點線）區隔。
+        const lobes = lobeStructure(top, s.targetM, s.freqGhz ?? RADAR_DEFAULTS.freqGhz, km)
+        for (const nullKm of lobes.nullsKm) {
+          L.circle([s.lat, s.lng], {
+            radius: nullKm * 1000,
+            color: '#fb7185',
+            weight: 1,
+            opacity: 0.55,
+            dashArray: '1 6',
+            fill: false,
+          })
+            .bindPopup(
+              `<b style="color:#fb7185">多路徑零陷</b><br/>${formatDist(nullKm, unit)}<br/>` +
+                `<span style="color:#94a3b8;font-size:11px">海面反射與直達波在此距離抵銷，` +
+                `${s.targetM}m 高的目標可能收不到回波。目標越矮、頻率越高，零陷越密。</span>`,
+            )
+            .addTo(g)
+        }
       }
       // 涵蓋：地形遮蔽多邊形（若已算）或圓圈
       const tRing = terrainRings[s.id]

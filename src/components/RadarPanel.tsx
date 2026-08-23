@@ -15,6 +15,7 @@ import {
 import { terrainCoverage } from '../lib/terrain'
 import { elevation } from '../lib/elevation'
 import { formatDist, toUnit, fromUnit, unitLabel, nmToKm } from '../lib/units'
+import { lobeStructure, clutterLimitedInnerKm, SEA_STATES } from '../lib/seaPropagation'
 import { CoordField } from './CoordField'
 
 /** 常見天線離地高快捷（m）。 */
@@ -66,6 +67,8 @@ export function RadarPanel() {
   const [freqGhz, setFreqGhz] = useState(RADAR_DEFAULTS.freqGhz)
   const [kFactor, setKFactor] = useState(RADAR_DEFAULTS.kFactor)
   const [advOpen, setAdvOpen] = useState(false)
+  /** 海況（1–6）：只影響「海雜波研判」的顯示，不改變涵蓋圈本身。 */
+  const [seaState, setSeaState] = useState(3)
   const [useGps, setUseGps] = useState(false)
   const [manLat, setManLat] = useState('')
   const [manLng, setManLng] = useState('')
@@ -134,6 +137,13 @@ export function RadarPanel() {
   const cov = radarCoverage(draft as never)
   const previewKm = cov.km
   const antTop = antennaTopM(siteElev ?? undefined, antennaM)
+
+  // 海面傳播效應：這兩項才是「小艇忽然不見」的常見主因，與地形遮蔽是不同機制。
+  const lobes = lobeStructure(antTop, targetM, freqGhz, previewKm)
+  const clutterInnerKm = clutterLimitedInnerKm(
+    { antennaTopM: antTop, targetRcsM2: targetRcs, seaState },
+    previewKm,
+  )
 
   // 算地形：傳 id 只算單站（點站台看它的真實盲區），不傳算全部
   const computeTerrain = async (onlyId?: string) => {
@@ -544,6 +554,69 @@ export function RadarPanel() {
                   {Number.isFinite(cov.powerKm) ? ` / 功率 ${formatDist(cov.powerKm, unit)}` : ' / 功率未設'}
                   {' / '}規格 {formatDist(cov.specKm, unit)}）
                 </span>
+              </div>
+
+              {/* 海面傳播效應：涵蓋圈之外，這兩項才是低矮目標實際看不到的主因 */}
+              <div className="flex flex-col gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/5 p-2">
+                <div className="text-[0.6875rem] font-bold text-rose-300">🌊 海面傳播研判（涵蓋圈內仍可能看不到）</div>
+
+                {/* 多路徑干涉零陷 */}
+                <div className="text-[0.625rem] leading-relaxed text-slate-300">
+                  <b className="text-slate-100">多路徑零陷</b>：海面反射與直達波干涉，目標落在零陷會收不到回波。
+                  <br />
+                  目標 {targetM}m 的零陷距離：
+                  {lobes.nullsKm.length > 0 ? (
+                    <b className="text-rose-300">
+                      {lobes.nullsKm.map((k) => formatDist(k, unit, 1)).join('、')}
+                    </b>
+                  ) : (
+                    <span className="text-slate-400">涵蓋範圍內無明顯零陷</span>
+                  )}
+                  <br />
+                  <span className="text-slate-500">
+                    訊號最強在 {formatDist(lobes.peakKm, unit)}；超過 {formatDist(lobes.farRolloffFromKm, unit)} 後
+                    隨距離單調衰減。目標越矮、頻率越高，零陷越密。
+                  </span>
+                </div>
+
+                {/* 海雜波 */}
+                <div className="flex flex-col gap-1 border-t border-slate-700 pt-1.5">
+                  <label className="text-[0.625rem] text-slate-400">🌊 海況（只影響雜波研判，不改變涵蓋圈）</label>
+                  <div className="grid grid-cols-6 gap-1">
+                    {SEA_STATES.map((s) => (
+                      <button
+                        key={s.ss}
+                        onClick={() => setSeaState(s.ss)}
+                        className={`rounded border py-1 text-[0.5625rem] font-bold active:scale-95 ${
+                          seaState === s.ss
+                            ? 'border-rose-400 bg-rose-400/15 text-rose-300'
+                            : 'border-slate-600 text-slate-300'
+                        }`}
+                      >
+                        {s.ss}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[0.625rem] leading-relaxed text-slate-300">
+                    海況 {seaState}（{SEA_STATES.find((s) => s.ss === seaState)?.label}，浪高{' '}
+                    {SEA_STATES.find((s) => s.ss === seaState)?.waveM}m）下，RCS {targetRcs}m² 的目標：
+                    <br />
+                    {clutterInnerKm === null ? (
+                      <b className="text-rose-300">全程被海雜波蓋住，此海況下基本偵測不到</b>
+                    ) : clutterInnerKm === 0 ? (
+                      <b className="text-tactical-green">不受海雜波限制</b>
+                    ) : (
+                      <>
+                        <b className="text-rose-300">{formatDist(clutterInnerKm, unit)} 以內被海雜波蓋住</b>
+                        <span className="text-slate-500">（越近擦地角越大、雜波越強，所以近不代表看得到）</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-[0.5rem] leading-tight text-slate-500">
+                  一階估算，用途是「指出哪些距離要提防」而非精確預測。實務上湧浪粗糙度會讓零陷變淺、不至於完全消失。
+                </div>
               </div>
 
               {/* 手動萬用座標（可貼任何格式；填了就以此為準） */}
