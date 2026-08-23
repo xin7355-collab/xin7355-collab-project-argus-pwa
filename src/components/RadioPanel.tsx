@@ -507,6 +507,12 @@ export function RadioPanel() {
                 ) : siteElev != null ? (
                   <span>
                     ⛰️ 站點地面海拔 <b className="text-tactical-cyan">{Math.round(siteElev)}m</b>（座標自動查）＋ 天線 {antennaM}m ＝ 天線頂 <b className="text-tactical-green">{Math.round(antTop)}m</b>。山頂站自動有大範圍，你只要填鐵塔高。
+                    <br />
+                    <span className="text-slate-500">
+                      高程為 90m 網格，已含建築植被但被抹平；
+                      <b className="text-slate-300">在建物頂樓架設請把建物高度一起算進天線高</b>。
+                      本 App 的 VHF 鏈路幾乎都是視距限制而非功率限制，天線高填準比調路徑損耗指數重要得多。
+                    </span>
                   </span>
                 ) : (
                   <span className="text-slate-400">⛰️ 填座標後自動查站點海拔並加進天線頂高（查不到則只用天線高）。</span>

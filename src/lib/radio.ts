@@ -46,6 +46,18 @@ export interface Repeater {
  * 不再重複加地面（避免「山頂 2900m 又加 3020m→6000m」的過度樂觀）。
  * → 使用者只要填鐵塔/天線離地高，山頂站也會自動算到正確的大範圍。
  */
+/**
+ * 註（建築高度）：本函式的 groundElevM 來自 Copernicus GLO-90 DSM，**已含建築與
+ * 植被**但被抹平在 90m 網格內。因此：
+ *   • 不要另外疊加 OSM 建物高度——會重複計算（詳見 lib/elevation.ts 檔頭）。
+ *   • 但「單棟建物」會被鄰近地面平均掉，所以**在頂樓架設時，請把建物高度一起
+ *     算進 antennaM**，這才是目前唯一正確的補償方式。
+ *
+ * 為什麼站台高度比建築衰減重要：本 App 的 VHF 鏈路幾乎都是「視距限制」而非
+ * 「功率限制」。實測固定台↔手持：視距 18.1km、密集市區(n=4) 功率極限 121km，
+ * 即使再加 20dB 建物遮蔽損耗，功率極限 38km 仍遠大於視距——涵蓋結果完全不變。
+ * 換言之調路徑損耗指數幾乎不影響答案，把天線高度填對才是關鍵。
+ */
 export function antennaTopM(groundElevM: number, antennaM: number): number {
   const g = Number.isFinite(groundElevM) ? groundElevM : 0
   return antennaM > 300 ? Math.max(g, antennaM) : g + antennaM
