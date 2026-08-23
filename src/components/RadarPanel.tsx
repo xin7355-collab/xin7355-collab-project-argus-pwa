@@ -409,6 +409,12 @@ export function RadarPanel() {
                     山頂站自動有大範圍，你只要填鐵塔高。
                   </>
                 )}
+                <br />
+                <span className="text-slate-500">
+                  高程資料為 90m 網格，已含建築與植被但被抹平；
+                  <b className="text-slate-300">在建物頂樓架設請把建物高度一起算進天線高</b>
+                  （單棟建物會被鄰近地面平均掉，不會自動算到）。
+                </span>
               </div>
 
               <label className="text-[0.625rem] text-slate-400">
