@@ -153,6 +153,20 @@ interface TacticalState {
   /** 距離顯示單位。預設「浬」——海上作業通用單位。 */
   distUnit: DistUnit
 
+  // ── 微波備用鏈路（點對點路徑剖面）────────────────────────
+  /** 已分析的微波路徑，供地圖畫線與標示最糟遮蔽點。null＝未分析。 */
+  mwPath: {
+    a: { lat: number; lng: number; name: string }
+    b: { lat: number; lng: number; name: string }
+    /** 最糟淨空點；null＝全程無瓶頸。 */
+    worst: { lat: number; lng: number; km: number; ratio: number; groundM: number } | null
+    /** 是否達 60% F1 淨空。 */
+    ok: boolean
+    /** 幾何視線是否被擋。 */
+    blocked: boolean
+    totalKm: number
+  } | null
+
   // ── 領海基線/鄰接區參考線（跨模式覆蓋層）────────────
   showTerritorial: boolean
   /** 風場圖層（風向風速箭頭，跨模式常駐）。 */
@@ -345,6 +359,7 @@ interface TacticalState {
   setOpenTool: (id: string | null) => void
   setUiScale: (v: number) => void
   setDistUnit: (v: DistUnit) => void
+  setMwPath: (v: TacticalState['mwPath']) => void
   setBaseLayer: (id: BaseLayerId) => void
   setShowTerritorial: (v: boolean) => void
   setShowWind: (v: boolean) => void
@@ -514,6 +529,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   openTool: null,
   uiScale: loadUiScale(),
   distUnit: loadDistUnit(),
+  mwPath: null,
   showTerritorial: false,
   showWind: false,
   showWindFarms: false,
@@ -695,6 +711,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
     persistDistUnit(v)
     set({ distUnit: v })
   },
+  setMwPath: (v) => set({ mwPath: v }),
   setBaseLayer: (id) => {
     try {
       localStorage.setItem('argus.baseLayer.v1', id)

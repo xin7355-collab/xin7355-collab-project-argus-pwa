@@ -34,6 +34,7 @@ import { SearchMarkerLayer } from './SearchMarkerLayer'
 import { MeasureLayer } from './MeasureLayer'
 import { RadarLayer, WindClutterLayer } from './RadarLayer'
 import { RadioLayer } from './RadioLayer'
+import { MicrowaveLayer } from './MicrowaveLayer'
 import { LookoutLayer } from './LookoutLayer'
 import { RangeRingLayer } from './RangeRingLayer'
 import { InterceptLayer } from './InterceptLayer'
@@ -102,6 +103,7 @@ export function MapContainer() {
       {map && <RadarLayer map={map} />}
       {map && <WindClutterLayer map={map} />}
       {map && <RadioLayer map={map} />}
+      {map && <MicrowaveLayer map={map} />}
       {map && <LookoutLayer map={map} />}
       {map && <RangeRingLayer map={map} />}
       {map && <InterceptLayer map={map} />}

@@ -12,6 +12,7 @@ import { LayerManager } from './components/LayerManager'
 import { NightOpsPanel } from './components/NightOpsPanel'
 import { RadarPanel } from './components/RadarPanel'
 import { RadioPanel } from './components/RadioPanel'
+import { MicrowavePanel } from './components/MicrowavePanel'
 import { LookoutPanel } from './components/LookoutPanel'
 import { InterceptPanel } from './components/InterceptPanel'
 import { DrPanel } from './components/DrPanel'
@@ -44,6 +45,7 @@ export default function App() {
       <NightOpsPanel />
       <RadarPanel />
       <RadioPanel />
+      <MicrowavePanel />
       <LookoutPanel />
       <InterceptPanel />
       <DrPanel />
