@@ -21,6 +21,7 @@ const TOOLS: Tool[] = [
   { id: 'radio', icon: '📻', label: '無線電覆蓋', sub: '中繼台 / 死角 / 測距' },
   { id: 'lookout', icon: '👁️', label: '瞭望哨視域', sub: '目視範圍 / 死角' },
   { id: 'radar', icon: '📡', label: '雷達涵蓋', sub: '沿岸 / 離岸風電雷達' },
+  { id: 'microwave', icon: '📶', label: '微波鏈路', sub: '備用鏈路 / 路徑遮蔽 / 雨衰' },
   { id: 'offline', icon: '⬇', label: '離線地圖', sub: '下載此區圖磚' },
 ]
 
