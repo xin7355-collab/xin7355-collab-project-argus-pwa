@@ -45,7 +45,8 @@ export function tilesForBounds(
 
 /** CARTO 深色底圖 URL（與 MapContainer 顯示用一致）。 */
 export function tileUrl({ z, x, y }: TileCoord): string {
-  return `https://a.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`
+  // 跟 baseLayers.ts 的 dark 底圖同一個來源（CARTO 已改為需金鑰，會下載到浮水印圖）。
+  return `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`
 }
 
 /**

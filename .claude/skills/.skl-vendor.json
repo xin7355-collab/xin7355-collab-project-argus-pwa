@@ -1,0 +1,30 @@
+{
+  "skills": [
+    "app-guardrails-audit",
+    "apple-hig-expert",
+    "browser-qa",
+    "dependency-auditor",
+    "deployment-patterns",
+    "e2e-testing",
+    "error-handling",
+    "make-interfaces-feel-better",
+    "systematic-debugging",
+    "verification-before-completion"
+  ],
+  "source_repo": "https://github.com/xin7355-collab/skl",
+  "source_commit": "a7d368b",
+  "updated_at": "2026-10-11T06:38:42Z",
+  "packs": [],
+  "extra_skills": [
+    "ecc/skills/browser-qa",
+    "ecc/skills/deployment-patterns",
+    "ecc/skills/e2e-testing",
+    "ecc/skills/error-handling",
+    "ecc/skills/make-interfaces-feel-better",
+    "engineering/skills/dependency-auditor",
+    "product-team/apple-hig-expert/skills/apple-hig-expert",
+    "superpowers/skills/systematic-debugging",
+    "superpowers/skills/verification-before-completion",
+    "xin-toolkit/skills/app-guardrails-audit"
+  ]
+}
