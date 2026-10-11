@@ -13,3 +13,6 @@ cloudflare/.wrangler
 
 # TS build cache
 tsconfig.tsbuildinfo
+
+# 比較用的臨時建置產物
+dist-before/

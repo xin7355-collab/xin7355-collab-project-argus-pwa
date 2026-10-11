@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { loadRecentTools, pushRecentTool } from '../lib/recentTools'
 import { useTacticalStore } from '../store/tacticalStore'
 
 /** 工具總表項目。 */
@@ -55,8 +56,16 @@ export function ToolLauncher() {
   // 機敏鎖住時，雷達整格不出現（縱深防禦：外人看不到有此功能）
   const tools = TOOLS.filter((t) => !(t.id === 'radar' && radarLocked))
 
+  const [recent, setRecent] = useState<string[]>(() => loadRecentTools())
+  // 只保留目前真的可用的工具（例如雷達上鎖時不該出現在常用列）
+  const recentTools = recent
+    .map((id) => tools.find((t) => t.id === id))
+    .filter((t): t is Tool => Boolean(t))
+
   const pick = (id: string) => {
     setOpen(false)
+    // 記住用過什麼，下次置頂——13 個格子沒有排序，每次都要從頭找
+    setRecent((r) => pushRecentTool(id, r))
     // 量測是「開關」不是面板：直接切換點圖量測模式
     if (id === 'measure') {
       if (!measuring) toggleMeasure()
@@ -94,6 +103,25 @@ export function ToolLauncher() {
               <h2 className="text-base font-bold text-tactical-cyan">🧰 工具</h2>
               <button onClick={() => setOpen(false)} className="text-slate-400 active:scale-95">✕</button>
             </div>
+            {/* 常用：依最近用過排序，置頂一排，不用每次從 13 個格子裡找 */}
+            {recentTools.length > 0 && (
+              <div className="mb-3">
+                <div className="mb-1.5 text-[0.625rem] font-bold text-slate-400">⭐ 常用</div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {recentTools.map((t) => (
+                    <button
+                      key={`recent-${t.id}`}
+                      onClick={() => pick(t.id)}
+                      className="flex flex-col items-center gap-0.5 rounded-lg border border-tactical-cyan/50 bg-tactical-cyan/10 px-1 py-2 text-center active:scale-95"
+                    >
+                      <span className="text-xl leading-none">{t.icon}</span>
+                      <span className="text-[0.5625rem] font-semibold text-tactical-cyan">{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-3 gap-2">
               {tools.map((t) => (
                 <button

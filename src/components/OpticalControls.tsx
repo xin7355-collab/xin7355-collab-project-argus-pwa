@@ -4,6 +4,7 @@ import { isSentinelConfigured } from '../lib/sentinel'
 import { SatelliteQuickLinks } from './SatelliteQuickLinks'
 import { parseCoord } from '../lib/coordParse'
 import { CoordField } from './CoordField'
+import { Hint } from './Hint'
 import { shareReport } from '../lib/report'
 import { findRecentSentinelDate } from '../lib/sentinelCatalog'
 import {
@@ -153,12 +154,15 @@ export function OpticalControls() {
       </div>
 
       {/* 使用者常見誤解三點：影像是「快照非即時」、解析度上限、雲只能靠雷達穿 */}
-      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-[0.625rem] leading-relaxed text-amber-100/90">
-        <div className="mb-0.5 font-semibold text-amber-300">ℹ️ 看船前先懂三件事</div>
+      <Hint
+        id="optical-basics"
+        title="ℹ️ 看船前先懂三件事"
+        gist="快照不是即時 · 解析度上限 10m · 雲會擋住光學"
+      >
         <div>🕒 <b>這是「快照」不是即時</b>：畫面是衛星過境那一刻（約上午10–11時）的樣子，圖上的船是<b>那個時間</b>在那裡，不是現在。要即時船位請切 📡 AIS。</div>
         <div>🔬 <b>解析度上限 10m/像素</b>：小艇只佔 1–3 點，放到最大也不會更清楚（只是放大同樣的點，非新細節）。免費衛星沒有「每日又超清」的。</div>
         <div>☁️ <b>雲擋光學</b>：光學看不穿雲，多雲/夜間請按下方「☁️ 穿雲雷達」改用 Sentinel-1（雷達穿雲、日夜都行）。</div>
-      </div>
+      </Hint>
 
       {/* 穿雲快切：多雲/夜間改用 Sentinel-1 雷達（同日期）。只有設 Instance ID 才有意義 */}
       {hd && (
@@ -184,11 +188,16 @@ export function OpticalControls() {
         </div>
       )}
 
-      {/* 「看特定日期那艘船」：座標 + 日期合成一區，地圖直接換成該日影像 */}
-      <div className="rounded-lg border border-tactical-cyan/40 bg-tactical-cyan/5 p-2">
-        <div className="mb-1 text-[0.6875rem] font-semibold text-tactical-cyan">
-          🔎 看「案發當時那艘船」：① 座標 ② 日期
-        </div>
+      {/* 「看特定日期那艘船」：座標 + 日期合成一區，地圖直接換成該日影像。
+          查舊案是次要流程（主要流程是「看現在這片海」），預設收起來。
+          它原本佔掉面板 25% 的高度。 */}
+      <Hint
+        id="optical-case-lookup"
+        tone="plain"
+        title="🔎 看「案發當時那艘船」"
+        gist="輸入座標與日期，跳到那天那個位置的影像"
+      >
+        <div className="rounded-lg border border-tactical-cyan/40 bg-tactical-cyan/5 p-2">
         <CoordField onParsed={(la, ln) => { setQLat(String(la)); setQLng(String(ln)) }} />
         <div className="mt-1 flex items-center gap-1">
           <input
@@ -246,12 +255,19 @@ export function OpticalControls() {
         >
           {findBusy ? '⏳ 查詢中…' : '🔎 自動找最近有影像的日期（雲量夠低）'}
         </button>
-        <p className="mt-1 text-[0.625rem] leading-relaxed text-slate-500">
+        <Hint
+          id="optical-source-note"
+          title="📡 這個來源實際給你什麼"
+          gist={hd ? 'Sentinel-2 10m · 近 10 天最少雲的一景' : '免金鑰 MODIS 250m · 只看得到大船'}
+        >
+          <div>
           {hd
-            ? '✅ 有 Sentinel 金鑰：地圖顯示「所選日期往回 10 天內、雲最少的一景」Sentinel-2（10m）真實影像（同一點約每 5 天才過境，故非剛好當天；挑最少雲才看得到海面）。要精準鎖定某天那一景按上方 🔎 自動找；整片全黑=近日皆濃雲，改用 ☁️ 穿雲雷達。'
-            : '免金鑰：地圖顯示該日 MODIS（250m，只看得到大船/船隊）。要 10m 全解析，貼 Sentinel 金鑰，或用本頁最下方「外部全解析衛星」連結。'}
-        </p>
+              ? '✅ 有 Sentinel 金鑰：地圖顯示「所選日期往回 10 天內、雲最少的一景」Sentinel-2（10m）真實影像（同一點約每 5 天才過境，故非剛好當天；挑最少雲才看得到海面）。要精準鎖定某天那一景按上方 🔎 自動找；整片全黑=近日皆濃雲，改用 ☁️ 穿雲雷達。'
+              : '免金鑰：地圖顯示該日 MODIS（250m，只看得到大船/船隊）。要 10m 全解析，貼 Sentinel 金鑰，或用本頁最下方「外部全解析衛星」連結。'}
+          </div>
+        </Hint>
       </div>
+      </Hint>
 
       {/* 免金鑰四選一：高解析空拍(陸) / 無雲S2 / 每日MODIS / 海底地形(外海) */}
       {!hd && (
@@ -416,20 +432,35 @@ export function OpticalControls() {
             </div>
           </>
         )}
-        <p className="mt-1 text-[0.625rem] leading-relaxed text-slate-500">
+        <Hint
+          id="optical-scan-note"
+          title="🔍 掃描在做什麼"
+          gist="標出暗海上的突出目標並比對 AIS；輔助分流，不是確認身分"
+        >
+          <div>
           分析目前畫面：把暗海上突出目標畫框標注、估尺度分類，並與 AIS 比對——
-          <b className="text-tactical-alert">紅框=無AIS訊號(可疑優先查)</b>、綠框=已知AIS。
-          <b className="text-slate-400">輔助分流</b>，非確認身分；白浪/反光也可能中。
-        </p>
+            <b className="text-tactical-alert">紅框=無AIS訊號(可疑優先查)</b>、綠框=已知AIS。
+            <b className="text-slate-400">輔助分流</b>，非確認身分；白浪/反光也可能中。
+          </div>
+        </Hint>
       </div>
 
-      {/* 以查詢座標（或我的位置）為中心，鎖定觀測日期開免費衛星檔案 */}
-      <SatelliteQuickLinks
-        lat={linkCenter?.lat}
-        lng={linkCenter?.lng}
-        date={observationDate}
-        title={`🛰️ 外部全解析衛星檔案（${observationDate} · Sentinel 雷達/光學）`}
-      />
+      {/* 以查詢座標（或我的位置）為中心，鎖定觀測日期開免費衛星檔案。
+          這是「去別的網站看」的入口，不是本頁的主要操作，預設收起來——
+          它原本佔掉整個面板 32% 的高度，把真正要按的東西擠到畫面外。 */}
+      <Hint
+        id="optical-external-links"
+        tone="plain"
+        title="🛰️ 外部全解析衛星檔案"
+        gist={`在 Copernicus／Worldview 開 ${observationDate} 的原始影像`}
+      >
+        <SatelliteQuickLinks
+          lat={linkCenter?.lat}
+          lng={linkCenter?.lng}
+          date={observationDate}
+          title={`🛰️ 外部全解析衛星檔案（${observationDate} · Sentinel 雷達/光學）`}
+        />
+      </Hint>
     </div>
   )
 }
