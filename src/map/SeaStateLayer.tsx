@@ -12,6 +12,8 @@ import { fetchCwaSeaAreas, fetchCwaTide } from '../lib/cwaMarine'
  */
 export function SeaStateLayer({ map }: { map: L.Map }) {
   const mode = useTacticalStore((s) => s.mode)
+  // 金鑰改過就重建：以前要整頁重載才會生效，會把地圖位置與模式全洗掉。
+  const configRev = useTacticalStore((s) => s.configRev)
   const field = useTacticalStore((s) => s.seaStateField)
   const setStatus = useTacticalStore((s) => s.setStatus)
   const setCwaSeaAreas = useTacticalStore((s) => s.setCwaSeaAreas)
@@ -139,7 +141,7 @@ export function SeaStateLayer({ map }: { map: L.Map }) {
       setCwaTide(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, field])
+  }, [mode, field, configRev])
 
   return null
 }

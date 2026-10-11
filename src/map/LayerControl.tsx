@@ -29,6 +29,8 @@ export function LayerControl({ map }: { map: L.Map }) {
   const opticalSource = useTacticalStore((s) => s.opticalSource)
   const opticalRadar = useTacticalStore((s) => s.opticalRadar)
   const compare = useTacticalStore((s) => s.compare)
+  // 金鑰改過就重建：以前要整頁重載才會生效，會把地圖位置與模式全洗掉。
+  const configRev = useTacticalStore((s) => s.configRev)
   const detections = useTacticalStore((s) => s.detections)
   const setStatus = useTacticalStore((s) => s.setStatus)
 
@@ -191,7 +193,7 @@ export function LayerControl({ map }: { map: L.Map }) {
       removeVector()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, maxCloudCover, observationDate, opticalSource, opticalRadar, compare])
+  }, [mode, maxCloudCover, observationDate, opticalSource, opticalRadar, compare, configRev])
 
   // ── Vector 層：AI 偵測結果單獨更新（不重建影像層）──────
   useEffect(() => {

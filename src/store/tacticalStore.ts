@@ -5,6 +5,7 @@ import type { MarineEnv } from '../lib/marineEnv'
 import type { HourlySeries } from '../lib/marineSeries'
 import type { Vessel } from '../lib/ais'
 import type { ImagerySourceId, OpticalSource } from '../lib/imagerySources'
+import { baseForOptical, daysEarlier, opticalForBase } from '../lib/imagerySources'
 import type { Detection } from '../lib/detection'
 import type { IssFix } from '../lib/issTrack'
 import type { Typhoon } from '../lib/typhoon'
@@ -75,6 +76,11 @@ interface TacticalState {
    * 注意這是 LayerControl「同時只掛一層重度影像」原則的刻意例外，流量約兩倍。
    */
   compare: CompareSpec | null
+  /**
+   * 設定（金鑰）改過幾次。圖層與面板把它放進 deps／訂閱它，
+   * 填完金鑰就能立刻生效，不必像以前那樣整頁重載而把地圖位置和模式都洗掉。
+   */
+  configRev: number
 
   // ── 軌道模式：ISS 即時星下點 ──────────────────────────
   /** 是否開啟 ISS 即時追蹤（會持續用網路，所以預設關閉、也不記憶）。 */
@@ -327,6 +333,7 @@ interface TacticalState {
   setObservationDate: (d: string) => void
   setOpticalSource: (s: OpticalSource) => void
   setCompare: (c: CompareSpec | null) => void
+  bumpConfigRev: () => void
   setShowIss: (v: boolean) => void
   /** 寫入一筆 ISS 位置並接到航跡尾端（maxTrail 為航跡上限）。 */
   setIssFix: (f: IssFix, maxTrail: number) => void
@@ -487,6 +494,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   observationDate: today,
   opticalSource: 'esri',
   compare: null,
+  configRev: 0,
   showIss: false,
   issFix: null,
   issTrail: [],
@@ -646,9 +654,35 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
     })),
 
   setMaxCloudCover: (v) => set({ maxCloudCover: v }),
-  setObservationDate: (d) => set({ observationDate: d }),
-  setOpticalSource: (s: OpticalSource) => set({ opticalSource: s }),
+  setObservationDate: (d) => {
+    // 日期是全域的「要看哪一天」。前後對照的兩側跟著平移，保持原本的間隔——
+    // 本來是「比 7 天前」，換個日期後仍然是「比 7 天前」，不會變成亂掉的兩個日期。
+    const cmp = get().compare
+    if (!cmp) {
+      set({ observationDate: d })
+      return
+    }
+    const prev = Date.parse(`${get().observationDate}T00:00:00Z`)
+    const shift = (side: { src: ImagerySourceId; date: string }) => {
+      const gap = Math.round((prev - Date.parse(`${side.date}T00:00:00Z`)) / 86400000)
+      return Number.isFinite(gap) ? { ...side, date: daysEarlier(d, gap) } : side
+    }
+    set({ observationDate: d, compare: { left: shift(cmp.left), right: shift(cmp.right) } })
+  },
+  setOpticalSource: (s: OpticalSource) => {
+    // 反向連動（見 setBaseLayer）。
+    const base = baseForOptical(s)
+    if (base) {
+      try {
+        localStorage.setItem('argus.baseLayer.v1', base)
+      } catch {
+        /* ignore */
+      }
+    }
+    set(base ? { opticalSource: s, baseLayer: base } : { opticalSource: s })
+  },
   setCompare: (c) => set({ compare: c }),
+  bumpConfigRev: () => set({ configRev: get().configRev + 1 }),
   setShowIss: (v) => set({ showIss: v, ...(v ? {} : { issFix: null, issTrail: [] }) }),
   setIssFix: (f, maxTrail) => {
     const trail = [...get().issTrail, { lat: f.lat, lng: f.lng, at: f.at }]
@@ -766,7 +800,10 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
     } catch {
       /* ignore */
     }
-    set({ baseLayer: id })
+    // 底圖與光學影像來源指的是同一批衛星影像，有對應的就一起換，
+    // 免得「選了衛星底圖，切到光學模式卻還是另一種影像」。
+    const optical = opticalForBase(id)
+    set(optical ? { baseLayer: id, opticalSource: optical } : { baseLayer: id })
   },
   setShowTerritorial: (v) => set({ showTerritorial: v }),
   setShowWind: (v) => set({ showWind: v }),

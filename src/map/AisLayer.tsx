@@ -20,6 +20,9 @@ export function AisLayer({ map }: { map: L.Map }) {
   const setVessels = useTacticalStore((s) => s.setVessels)
   const setStatus = useTacticalStore((s) => s.setStatus)
   const showBoatLights = useTacticalStore((s) => s.showBoatLights)
+  const observationDate = useTacticalStore((s) => s.observationDate)
+  // 金鑰改過就重建：以前要整頁重載才會生效，會把地圖位置與模式全洗掉。
+  const configRev = useTacticalStore((s) => s.configRev)
   const showRadarVessels = useTacticalStore((s) => s.showRadarVessels)
   const groupRef = useRef<L.LayerGroup | null>(null)
   const lightsRef = useRef<L.TileLayer | null>(null)
@@ -86,7 +89,7 @@ export function AisLayer({ map }: { map: L.Map }) {
       //「無AIS=可疑暗船」比對（見 BrightSpotLayer / store setMode 的說明）。
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode])
+  }, [mode, configRev])
 
   // ── 🌙 VIIRS 夜間漁火 疊層（免金鑰）──────────────────
   useEffect(() => {
@@ -99,7 +102,8 @@ export function AisLayer({ map }: { map: L.Map }) {
       }
     }
     if (mode === 'ais' && showBoatLights) {
-      const layer = buildGibsBoatLights(yesterdayYmd())
+      // 跟著全域觀測日期走（本來寫死昨天，選了日期也不會動）。
+      const layer = buildGibsBoatLights(observationDate || yesterdayYmd())
       layer.addTo(map)
       lightsRef.current = layer
       setStatus('🌙 已疊夜間漁火（VIIRS）：外海亮點＝開燈作業漁船；夜間才有、白天無效')
@@ -108,7 +112,7 @@ export function AisLayer({ map }: { map: L.Map }) {
     }
     return remove
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, showBoatLights])
+  }, [mode, showBoatLights, observationDate, configRev])
 
   // ── 📡 Sentinel-1 雷達暗船 疊層（需金鑰）─────────────
   useEffect(() => {
@@ -136,7 +140,7 @@ export function AisLayer({ map }: { map: L.Map }) {
     }
     return remove
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, showRadarVessels])
+  }, [mode, showRadarVessels, configRev])
 
   return null
 }
