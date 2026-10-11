@@ -1,0 +1,54 @@
+# 排程盯梢：你關注的海域一有新衛星影像就推播到手機。
+#
+# 要先設兩個 secret（Settings → Secrets and variables → Actions）：
+#   WATCH_BBOX   你要盯的範圍 "west,south,east,north"，例如 121.0,23.5,122.5,25.0
+#   NTFY_TOPIC   ntfy.sh 的主題名
+#
+# 為什麼放 secret 而不是寫在這個檔案裡：本 repo 是公開的。
+# 把座標 commit 進來等於公開你在盯哪片海；主題名外流則等於讓別人收你的通知。
+#
+# 手機端設定：App Store 裝「ntfy」→ 訂閱同一個主題名 → 就會收到推播。
+# 設好之後先跑一次「手動執行 → self_test = true」確認管線通，再等排程。
+
+name: 盯梢新衛星影像
+
+on:
+  schedule:
+    # 每 6 小時一次。Sentinel 過境本來就是數天一次，查太密只是浪費額度。
+    # 分鐘用 17 而非 0：整點是尖峰，GitHub 排程常被延遲。
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      self_test:
+        description: '只送一則測試推播，不查目錄（用來確認手機收不收得到）'
+        type: boolean
+        default: false
+
+# 同時只跑一個，排程塞車時不要疊起來重複通知
+concurrency:
+  group: watch-imagery
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    # 只讀——這個工作不需要寫 repo 的任何權限
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 查目錄並推播
+        env:
+          WATCH_BBOX: ${{ secrets.WATCH_BBOX }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          if [ "${{ inputs.self_test }}" = "true" ]; then
+            node --experimental-strip-types scripts/watch-imagery.mjs --self-test
+          else
+            node --experimental-strip-types scripts/watch-imagery.mjs
+          fi
