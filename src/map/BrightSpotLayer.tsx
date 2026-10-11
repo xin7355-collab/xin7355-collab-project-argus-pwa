@@ -58,11 +58,12 @@ export function BrightSpotLayer({ map }: { map: L.Map }) {
       return
     }
     setStatus('目標掃描中…')
+    // kStd 現在是「局部 σ̂」的倍數（局部自適應門檻），不再是全畫面的標準差——
+    // 暗海域的小艇不會再被亮區（太陽反光／海岸線）拉高的全域統計淹掉。
+    // ringMargin／minSize／護衛環等參數沿用 brightSpot.ts 的預設值。
     const spots = detectBrightSpots(data, {
       step: 2,
       kStd: sensitivity,
-      ringMargin: 14,
-      minSize: 1,
       maxSize: 40,
       maxSpots: 60,
     })
@@ -96,7 +97,7 @@ export function BrightSpotLayer({ map }: { map: L.Map }) {
         ? aisOn
           ? `目標掃描：${results.length} 個，其中 ⚠${suspicious} 個無 AIS（紅框優先查）`
           : `目標掃描：${results.length} 個疑似目標（設定 AIS 後可自動比對「無AIS=可疑」）`
-        : '目標掃描：此畫面沒有明顯目標（可調高靈敏度或放大）',
+        : '目標掃描：此畫面沒有明顯目標（門檻已按當地亮度自動調整；可調高靈敏度或放大）',
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanTick])
