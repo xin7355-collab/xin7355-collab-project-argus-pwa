@@ -75,22 +75,50 @@ jobs:
             exit 1
           fi
 
-          # API Token 格式檢查：Cloudflare token 為 40 個 [A-Za-z0-9_-] 字元。
-          # 空白已在上面清掉，所以這裡若仍不符，代表是別種貼錯：
-          # 多貼了 "Bearer " 前綴、複製到一半、貼成 Global API Key（那是 37 碼十六進位，
-          # 且需搭配 email，wrangler 不吃）。
-          if ! printf '%s' "$tok" | grep -qE '^[A-Za-z0-9_-]{40}$'; then
-            echo "::error::CLOUDFLARE_API_TOKEN 格式不正確（應為 40 個字元，僅含英數字、底線、連字號）"
-            echo "去除空白後長度：$(printf '%s' "$tok" | wc -c) 字元（正確應為 40）"
+          # API Token 的健全性檢查——刻意「寬鬆」。
+          #
+          # 這裡原本寫死「必須正好 40 個字元」，那是依照舊版 Cloudflare token 的長度。
+          # 實際遇到使用者拿到 53 字元的 token 被這條規則擋下來，而真正的格式
+          # 權威是 Cloudflare 自己，不是這個 workflow。長度寫死只會在 Cloudflare
+          # 改格式時變成假警報，把人擋在門外還叫他重做一次表單。
+          #
+          # 所以這裡只擋「一看就知道不可能對」的情況，其餘交給 wrangler 去碰釘子：
+          # 真的錯會回 6003（Invalid format）或 9109（Invalid access token），
+          # 空白已在上面清掉了，所以那時的錯誤訊息是可信的。
+          tok_len=$(printf '%s' "$tok" | wc -c)
+
+          # 非 ASCII：多半是複製時夾到全形引號、全形空格或中文字。
+          # 這種情況長度看起來正常但其實是壞的，單看長度查不出來，所以特別點名。
+          if printf '%s' "$tok" | LC_ALL=C grep -qP '[^\x20-\x7E]'; then
+            echo "::error::CLOUDFLARE_API_TOKEN 含有非 ASCII 字元（通常是複製時夾到全形引號／全形空格／中文字）"
+            echo "長度：$tok_len 位元組。請重新複製一次，只複製那串英數字本身。"
+            exit 1
+          fi
+
+          # charset：Cloudflare token 用的是 URL-safe 字元。出現空白以外的符號
+          # （例如 Bearer 的空格已被清掉，但引號、冒號、斜線不會）代表多貼了東西。
+          if ! printf '%s' "$tok" | grep -qE '^[A-Za-z0-9._~-]+$'; then
+            echo "::error::CLOUDFLARE_API_TOKEN 含有不該出現的符號（如引號、冒號、斜線）"
+            echo "長度：$tok_len 字元。常見原因：連 \"Authorization: Bearer ...\" 整行一起貼、"
+            echo "或貼成 JSON 片段。請只貼 token 本身。"
+            exit 1
+          fi
+
+          # 長度只做極寬鬆的合理性檢查：擋空字串與明顯複製到一半/整頁貼上。
+          if [ "$tok_len" -lt 20 ] || [ "$tok_len" -gt 200 ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN 長度不合理（$tok_len 字元）"
+            echo "太短通常是複製到一半，太長通常是整段文字一起貼到了。"
             echo ""
             echo "怎麼拿到正確的值："
             echo "  Cloudflare 後台 → 右上角人頭 → My Profile → API Tokens"
             echo "  → Create Token → 範本選「Edit Cloudflare Workers」→ Use template"
+            echo "  → Account Resources 選自己的帳號、Zone Resources 選 All zones"
             echo "  → Continue to summary → Create Token → 複製那串（只會顯示這一次）"
-            echo ""
-            echo "常見貼錯：前面多了 Bearer、複製到一半、貼成 Global API Key（那個不能用）"
             exit 1
           fi
+
+          # 走到這裡就不再自作主張，讓 Cloudflare 去判定。
+          echo "Token 通過健全性檢查（$tok_len 字元）。實際有效性由 Cloudflare 判定。"
 
           # 通過檢查 → 把清乾淨的值傳給後續步驟使用（已 add-mask，不會外洩到 log）
           {
