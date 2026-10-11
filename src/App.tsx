@@ -17,6 +17,7 @@ import { LookoutPanel } from './components/LookoutPanel'
 import { InterceptPanel } from './components/InterceptPanel'
 import { DrPanel } from './components/DrPanel'
 import { SecureUnlock } from './components/SecureUnlock'
+import { QuickScan } from './components/QuickScan'
 import { ToolLauncher } from './components/ToolLauncher'
 import { SituationOverview } from './components/SituationOverview'
 import { applyUiScale } from './lib/uiScale'
@@ -35,6 +36,7 @@ export default function App() {
       <StatusBar />
       <SituationOverview />
       <SettingsPanel />
+      <QuickScan />
       <ToolLauncher />
       <CoordManager />
       <MeasureControl />

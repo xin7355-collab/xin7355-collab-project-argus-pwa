@@ -71,6 +71,11 @@ interface TacticalState {
   /** 掃描到的疑似目標（含框、分類、AIS 比對）。 */
   brightSpots: Detection[]
   /**
+   * 每掃描「完成」一次 +1。一鍵掃描靠它知道結果出來了——
+   * 不能只看 brightSpots，因為「掃完但一個都沒有」也是合法結果。
+   */
+  scanDoneTick: number
+  /**
    * 前後對照：左右各一層影像，中間可拖的分隔線。null＝關閉。
    * 最常用的是「同來源、兩個日期」，一眼看出海面多了什麼。
    * 注意這是 LayerControl「同時只掛一層重度影像」原則的刻意例外，流量約兩倍。
@@ -502,6 +507,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   scanTick: 0,
   scanSensitivity: 3,
   brightSpots: [],
+  scanDoneTick: 0,
   detections: null,
   aiStatus: 'idle',
   aiError: null,
@@ -698,7 +704,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   setOpticalRadar: (v) => set({ opticalRadar: v }),
   bumpScan: () => set((st) => ({ scanTick: st.scanTick + 1 })),
   setScanSensitivity: (v) => set({ scanSensitivity: v }),
-  setBrightSpots: (s) => set({ brightSpots: s }),
+  setBrightSpots: (s) => set({ brightSpots: s, scanDoneTick: get().scanDoneTick + 1 }),
   setDetections: (d) => set({ detections: d }),
   setAiStatus: (s, error = null) => set({ aiStatus: s, aiError: error }),
   setSelecting: (v) => set({ selecting: v }),
