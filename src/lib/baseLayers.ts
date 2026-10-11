@@ -4,7 +4,8 @@ import { LAYERS } from './sentinel'
 
 // ── 底圖圖層 ────────────────────────────────────────────────
 //
-// dark：CARTO dark_matter 戰術暗色（英文標註、全球）。
+// dark：Esri World Dark Gray 戰術暗色（英文標註、全球、免金鑰）。
+//        原本用 CARTO，但它開始回傳「API KEY REQUIRED」浮水印圖磚。
 // nlsc：內政部國土測繪中心「通用版電子地圖」——繁體中文地名，官方免費，
 //        涵蓋台灣及周邊海域（遠洋無資料）。海上看得懂中文地名。
 // nlscPhoto：NLSC 正射影像＋中文注記（衛星底＋中文地名）。
@@ -100,11 +101,24 @@ export function buildBaseLayer(id: BaseLayerId): L.TileLayer {
       },
     )
   }
-  // dark（預設）
-  return L.tileLayer('https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    detectRetina: false,
-    className: 'base-tiles-tactical',
-    attribution: '© OpenStreetMap © CARTO',
-  })
+  // dark（預設）：Esri 暗色底圖。
+  //
+  // 原本用 CARTO dark_all，但實際在使用者手機上回傳的是印著
+  // 「API KEY REQUIRED / carto.com/basemaps/apikey」的浮水印圖磚——
+  // 整張地圖被蓋掉。dark 是 BaseLayerControl 常駐的底層（讓遠處海面不是白的），
+  // 所以它壞掉等於每個模式底下都是壞的。
+  //
+  // 換成 Esri World Dark Gray：一樣免金鑰，而且本 App 已經在用同一個主機
+  // （高解析空拍、海底地形），使用者手機上實測是正常載入的，等於已知可用。
+  return L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    {
+      // 原生到第 16 層，再放大由 Leaflet 內插（會糊不會白）
+      maxNativeZoom: 16,
+      maxZoom: 19,
+      detectRetina: false,
+      className: 'base-tiles-tactical',
+      attribution: 'Esri · HERE, Garmin, © OpenStreetMap contributors',
+    },
+  )
 }

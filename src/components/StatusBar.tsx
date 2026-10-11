@@ -14,6 +14,18 @@ const MODE_LABEL: Record<string, string> = {
 }
 
 /** 頂部狀態列：模式指示 + 即時訊息（給海上人員的單行回饋）。 */
+/**
+ * 建置時間縮寫成 MMDD-HHmm（本機時區）。
+ * 版本號本身改版才會動，但每次部署這一段都會變——使用者要確認
+ * 「手機上到底有沒有拿到新版」，看這個最快。
+ */
+const buildStamp = (() => {
+  const d = new Date(__BUILD_TIME__)
+  if (Number.isNaN(d.valueOf())) return '?'
+  const p2 = (n: number) => String(n).padStart(2, '0')
+  return `${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`
+})()
+
 export function StatusBar() {
   const mode = useTacticalStore((s) => s.mode)
   const statusMessage = useTacticalStore((s) => s.statusMessage)
@@ -52,7 +64,7 @@ export function StatusBar() {
             secureUnlocked ? 'text-tactical-cyan' : 'text-slate-500'
           }`}
         >
-          v2.38{secureUnlocked ? ' 🔓' : ''}
+          v{__APP_VERSION__}·{buildStamp}{secureUnlocked ? ' 🔓' : ''}
         </span>
       </div>
       <span className="min-w-0 truncate font-mono text-[0.6875rem] text-slate-300">{statusMessage}</span>
