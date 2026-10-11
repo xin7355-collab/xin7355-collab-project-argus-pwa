@@ -6,6 +6,7 @@ import type { HourlySeries } from '../lib/marineSeries'
 import type { Vessel } from '../lib/ais'
 import type { ImagerySourceId, OpticalSource } from '../lib/imagerySources'
 import type { Detection } from '../lib/detection'
+import type { IssFix } from '../lib/issTrack'
 import type { Typhoon } from '../lib/typhoon'
 import type { BaseLayerId } from '../lib/baseLayers'
 import type { TideEvent, SeaAreaForecast } from '../lib/cwaMarine'
@@ -74,6 +75,14 @@ interface TacticalState {
    * 注意這是 LayerControl「同時只掛一層重度影像」原則的刻意例外，流量約兩倍。
    */
   compare: CompareSpec | null
+
+  // ── 軌道模式：ISS 即時星下點 ──────────────────────────
+  /** 是否開啟 ISS 即時追蹤（會持續用網路，所以預設關閉、也不記憶）。 */
+  showIss: boolean
+  /** 最後一筆 ISS 位置。取不到時保留上一筆，不清空。 */
+  issFix: IssFix | null
+  /** 最近一段航跡（新的在後面）。 */
+  issTrail: { lat: number; lng: number; at: number }[]
 
   // ── AI 分析結果 ─────────────────────────────────────
   detections: DetectionCollection | null
@@ -318,6 +327,9 @@ interface TacticalState {
   setObservationDate: (d: string) => void
   setOpticalSource: (s: OpticalSource) => void
   setCompare: (c: CompareSpec | null) => void
+  setShowIss: (v: boolean) => void
+  /** 寫入一筆 ISS 位置並接到航跡尾端（maxTrail 為航跡上限）。 */
+  setIssFix: (f: IssFix, maxTrail: number) => void
   setOpticalRadar: (v: boolean) => void
   bumpScan: () => void
   setScanSensitivity: (v: number) => void
@@ -475,6 +487,9 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   observationDate: today,
   opticalSource: 'esri',
   compare: null,
+  showIss: false,
+  issFix: null,
+  issTrail: [],
   opticalRadar: false,
   scanTick: 0,
   scanSensitivity: 3,
@@ -616,6 +631,10 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
       // 注意：vessels 不清空——保留最後已知 AIS，供光學亮點掃描做「無AIS=可疑」比對。
       brightSpots: [],
       compare: null,
+      // 離開軌道模式就停掉 ISS 輪詢，別在背景一直吃網路。
+      showIss: false,
+      issFix: null,
+      issTrail: [],
       cwaTide: null,
       cwaSeaAreas: null,
       animPlaying: false,
@@ -630,6 +649,18 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   setObservationDate: (d) => set({ observationDate: d }),
   setOpticalSource: (s: OpticalSource) => set({ opticalSource: s }),
   setCompare: (c) => set({ compare: c }),
+  setShowIss: (v) => set({ showIss: v, ...(v ? {} : { issFix: null, issTrail: [] }) }),
+  setIssFix: (f, maxTrail) => {
+    const trail = [...get().issTrail, { lat: f.lat, lng: f.lng, at: f.at }]
+    // 跨換日線時經度會從 +180 跳到 -180，直接連起來會在地圖上拉一條橫貫全圖的
+    // 假線。偵測到大跳躍就把航跡重新開始，寧可斷掉也不要畫錯。
+    const prev = trail[trail.length - 2]
+    const wrapped = prev && Math.abs(prev.lng - f.lng) > 180
+    set({
+      issFix: f,
+      issTrail: wrapped ? [{ lat: f.lat, lng: f.lng, at: f.at }] : trail.slice(-maxTrail),
+    })
+  },
   setOpticalRadar: (v) => set({ opticalRadar: v }),
   bumpScan: () => set((st) => ({ scanTick: st.scanTick + 1 })),
   setScanSensitivity: (v) => set({ scanSensitivity: v }),
