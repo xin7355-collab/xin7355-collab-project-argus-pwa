@@ -1,7 +1,20 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import { useTacticalStore } from '../store/tacticalStore'
-import { fetchIssFix, isOverhead, issFootprintKm, type IssFix } from '../lib/issTrack'
+import {
+  fetchIssFix,
+  isOverhead,
+  issFootprintKm,
+  ISS_INCLINATION_DEG,
+  orbitPeriodMin,
+  type IssFix,
+} from '../lib/issTrack'
+import {
+  coversPoint,
+  groundTrack,
+  splitAtDateline,
+  type OrbitAnchor,
+} from '../lib/groundTrack'
 import { distanceKm, bearingDeg } from '../lib/windRadar'
 import { bearingToText } from '../lib/drift'
 import { formatDist } from '../lib/units'
@@ -87,6 +100,39 @@ export function IssLayer({ map }: { map: L.Map }) {
       dashArray: '5 5',
     }).addTo(g)
 
+    // ── 接下來會飛過哪裡（未來一圈的地面軌跡）────────────
+    //
+    // 錨點用的是「剛抓到的真實星下點」，不是假造的軌道根數——
+    // 傾角與週期只決定軌跡的形狀，位置完全由這個真實錨點決定。
+    // 上升/下降由最近兩筆航跡判斷；只有一筆時先當上升段（下一輪就會修正）。
+    const prev = issTrail.length > 1 ? issTrail[issTrail.length - 2] : null
+    const ascending = prev ? fix.lat >= prev.lat : true
+    const anchor: OrbitAnchor = {
+      at: fix.at,
+      lat: fix.lat,
+      lng: fix.lng,
+      inclinationDeg: ISS_INCLINATION_DEG,
+      periodMin: orbitPeriodMin(fix.altKm),
+      ascending,
+    }
+    const periodMs = anchor.periodMin * 60 * 1000
+    const track = groundTrack(anchor, fix.at, fix.at + periodMs, 30)
+    for (const seg of splitAtDateline(track)) {
+      L.polyline(
+        seg.map((p) => [p.lat, p.lng] as [number, number]),
+        { color, weight: 1.5, opacity: 0.5, dashArray: '4 6' },
+      )
+        .bindPopup(
+          '<b>ISS 接下來一圈的地面軌跡</b><br/>' +
+            '<span style="color:#94a3b8;font-size:11px">圓軌道近似，錨定在剛抓到的真實星下點。' +
+            '一兩圈內夠準，不要拿來預報好幾天以後。</span>',
+        )
+        .addTo(g)
+    }
+
+    // 最接近畫面中心的時刻——這才是「它什麼時候會到我頭上」
+    const pass = coversPoint(track, 2 * footKm, c.lat, c.lng)
+
     // 航跡
     if (issTrail.length > 1) {
       L.polyline(
@@ -118,6 +164,10 @@ export function IssLayer({ map }: { map: L.Map }) {
           `距畫面中心 ${formatDist(km, unit)}　方位 ${bearingToText(brg)}（${Math.round(brg)}°）<br/>` +
           `${overhead ? '<b style="color:#34d399">在可見地平圈內</b>' : '在可見地平圈外'}` +
           `（半徑 ${formatDist(footKm, unit, 0)}）<br/>` +
+          (pass
+            ? `下次最接近畫面中心 ${new Date(pass.at).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}` +
+              `（屆時距 ${formatDist(pass.km, unit)}${pass.covered ? '，在可見圈內' : '，仍在可見圈外'}）<br/>`
+            : '') +
           `日照 ${fix.visibility ?? '無資料'}${sunny ? '（被陽光照到）' : ''}<br/>` +
           `<span style="color:#94a3b8;font-size:11px">資料 ${age}s 前 · 來源 ${fix.source}。` +
           '這是「它現在飛在哪」的星下點，不是可見性預報——圈內只代表幾何上看得到，' +

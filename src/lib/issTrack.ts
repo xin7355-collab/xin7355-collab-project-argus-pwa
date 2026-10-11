@@ -24,6 +24,26 @@ const ISS_FALLBACK = 'https://api.open-notify.org/iss-now.json'
 export const ISS_NOMINAL_ALT_KM = 420
 
 const EARTH_R_KM = 6371
+/** 地球重力常數 μ（km³/s²）。由高度推算軌道週期用。 */
+const MU_KM3_S2 = 398600.4418
+
+/**
+ * ISS 軌道傾角（度）。這個值非常穩定（太空站會維持軌位），
+ * 而即時位置 API 不回傳傾角，所以寫在這裡當常數。
+ * 它決定軌跡的「形狀」（最北/最南到哪），位置則由即時星下點決定。
+ */
+export const ISS_INCLINATION_DEG = 51.64
+
+/**
+ * 由高度推算圓軌道週期（分鐘）：T = 2π√(r³/μ)。
+ * 420km 約 92.8 分鐘，跟公開資料相符。
+ * 用算的而不是寫死，軌道因大氣阻力衰減時才會跟著變。
+ */
+export function orbitPeriodMin(altKm: number | null): number {
+  const h = altKm && altKm > 0 ? altKm : ISS_NOMINAL_ALT_KM
+  const r = EARTH_R_KM + h
+  return (2 * Math.PI * Math.sqrt((r * r * r) / MU_KM3_S2)) / 60
+}
 
 export interface IssFix {
   lat: number

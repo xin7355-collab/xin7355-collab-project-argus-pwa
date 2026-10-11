@@ -1,11 +1,12 @@
 import { useTacticalStore } from '../store/tacticalStore'
-import { overpassForecast, crossingsText } from '../lib/overpass'
+import { overpassForecast, crossingsText, swathFit, viewWidthKm } from '../lib/overpass'
 import { fmtDay } from '../lib/timefmt'
 import { SatelliteQuickLinks } from './SatelliteQuickLinks'
 import { isOverhead, issFootprintKm } from '../lib/issTrack'
 import { distanceKm, bearingDeg } from '../lib/windRadar'
 import { bearingToText } from '../lib/drift'
 import { formatDist } from '../lib/units'
+import { Hint } from './Hint'
 
 function dayTime(epoch: number): string {
   const d = new Date(epoch)
@@ -30,6 +31,10 @@ export function OverpassControls() {
   const gotoCoord = useTacticalStore((s) => s.gotoCoord)
   const unit = useTacticalStore((s) => s.distUnit)
   const rows = overpassForecast(Date.now())
+  // 畫面實際多寬，用來回答「一趟掃幅蓋不蓋得住我這片海」。
+  // 注意：這只回答「夠不夠寬」，不回答「會不會剛好掃過這裡」——
+  // 後者要軌道根數（TLE）才算得出來，本 App 取不到，不假造。
+  const viewKm = viewWidthKm(mapView.lat, mapView.zoom, window.innerWidth)
   const today = new Date().toISOString().slice(0, 10)
 
   return (
@@ -111,6 +116,27 @@ export function OverpassControls() {
         )}
       </div>
 
+      <Hint
+        id="overpass-why-no-track"
+        tone="plain"
+        title="為什麼只有 ISS 畫得出軌跡？"
+        gist="其他衛星需要軌道根數（TLE），本 App 取不到，不假造"
+      >
+        <div>
+          ISS 有免金鑰的即時位置來源，所以它的軌跡是用「剛抓到的真實星下點」
+          當錨點推算出來的，位置是真的。
+        </div>
+        <div>
+          Sentinel／MODIS／VIIRS 這些要靠軌道根數（TLE）才算得出地面軌跡，
+          本 App 目前沒有可信來源可以取得。與其畫一條看起來很專業但位置是猜的線，
+          不如不畫——所以這裡只回答「一趟掃幅夠不夠寬」，不回答「會不會剛好掃過這裡」。
+        </div>
+        <div>
+          要確認某一天某顆衛星有沒有拍到你那片海，最準的做法還是到下方的
+          外部連結開 Copernicus Browser／NASA Worldview 查實際有沒有那一景。
+        </div>
+      </Hint>
+
       <div className="flex flex-col gap-1.5">
         {rows.map(({ sat, nextEpoch }) => (
           <div key={sat.id} className="rounded-lg border border-slate-700 bg-slate-900/50 p-2">
@@ -121,6 +147,20 @@ export function OverpassControls() {
                 {sat.kind}
               </span>
             </div>
+            {(() => {
+              const fit = swathFit(sat.swathKm, viewKm)
+              if (!fit.text) return null
+              return (
+                <div
+                  className={`mt-1 text-[0.5625rem] leading-relaxed ${
+                    fit.coversView ? 'text-tactical-green/80' : 'text-amber-300/80'
+                  }`}
+                >
+                  {fit.coversView ? '✓ ' : '⚠ '}
+                  {fit.text}
+                </div>
+              )
+            })()}
             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.625rem] text-slate-400">
               <span>解析度 {sat.resText}</span>
               <span>掃幅 {sat.swathKm} km</span>
