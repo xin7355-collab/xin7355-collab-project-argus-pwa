@@ -23,7 +23,18 @@ export function BrightSpotLayer({ map }: { map: L.Map }) {
   useEffect(() => {
     if (mode !== 'optical' || scanTick === 0) return
     const container = map.getContainer()
-    const imgs = container.querySelectorAll<HTMLImageElement>('img.gibs-imagery')
+    // Leaflet 的 className 是套在「圖層容器 div」上，不是套在每一張圖磚 <img> 上
+    // （圖磚的 class 固定是 leaflet-tile）。所以舊的 'img.gibs-imagery' 永遠匹配 0 個，
+    // 掃描每次都在這裡直接 return——這個功能其實從來沒有真的跑過。
+    // 正確做法是先找到影像層的容器，再取它底下的圖磚。
+    //
+    // 用 .gibs-imagery 而不是更寬的選擇器，是為了只讀「主影像層」：
+    // 前後對照的右側層 class 是 .gibs-imagery-cmp，不會被選到，
+    // 所以對照模式下掃描仍然以左側為準。
+    const holder = container.querySelector<HTMLElement>('.gibs-imagery')
+    const imgs = holder
+      ? holder.querySelectorAll<HTMLImageElement>('img')
+      : ([] as unknown as NodeListOf<HTMLImageElement>)
     if (!imgs.length) {
       setStatus('請先切到有衛星影像的來源（高解析/無雲/每日）再掃描')
       return
