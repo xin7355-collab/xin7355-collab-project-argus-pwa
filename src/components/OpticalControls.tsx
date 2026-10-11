@@ -6,11 +6,56 @@ import { parseCoord } from '../lib/coordParse'
 import { CoordField } from './CoordField'
 import { shareReport } from '../lib/report'
 import { findRecentSentinelDate } from '../lib/sentinelCatalog'
+import {
+  IMAGERY_SOURCES,
+  daysEarlier,
+  imagerySourceDef,
+  type ImagerySourceId,
+} from '../lib/imagerySources'
 
 /**
  * 光學模式的控制項：影像來源提示 + 雲量滑桿 + 歷史觀測日期。
  * 只在 optical 模式顯示，避免 UI 雜亂。
  */
+/** 前後對照的一側（來源 + 日期）挑選器。 */
+function CompareSide({
+  tag,
+  side,
+  onChange,
+}: {
+  tag: string
+  side: { src: ImagerySourceId; date: string }
+  onChange: (next: { src: ImagerySourceId; date: string }) => void
+}) {
+  const dated = imagerySourceDef(side.src).dated
+  return (
+    <div className="rounded border border-slate-700 p-1.5">
+      <div className="mb-1 text-[0.625rem] font-bold text-slate-400">{tag}</div>
+      <select
+        value={side.src}
+        onChange={(e) => onChange({ ...side, src: e.target.value as ImagerySourceId })}
+        className="w-full rounded bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-200"
+      >
+        {IMAGERY_SOURCES.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.label}（{o.sub}）
+          </option>
+        ))}
+      </select>
+      <input
+        type="date"
+        value={side.date}
+        disabled={!dated}
+        onChange={(e) => onChange({ ...side, date: e.target.value })}
+        className="mt-1 w-full rounded bg-slate-800 px-1 py-1 text-[0.6875rem] text-slate-200 disabled:opacity-40"
+      />
+      {!dated && (
+        <div className="mt-0.5 text-[0.5625rem] text-slate-500">此來源是鑲嵌合成，沒有單日影像</div>
+      )}
+    </div>
+  )
+}
+
 export function OpticalControls() {
   const maxCloudCover = useTacticalStore((s) => s.maxCloudCover)
   const setMaxCloudCover = useTacticalStore((s) => s.setMaxCloudCover)
@@ -29,6 +74,8 @@ export function OpticalControls() {
   const scanSensitivity = useTacticalStore((s) => s.scanSensitivity)
   const setScanSensitivity = useTacticalStore((s) => s.setScanSensitivity)
   const brightSpots = useTacticalStore((s) => s.brightSpots)
+  const compare = useTacticalStore((s) => s.compare)
+  const setCompare = useTacticalStore((s) => s.setCompare)
   const today = new Date().toISOString().slice(0, 10)
   const hd = isSentinelConfigured()
 
@@ -249,6 +296,67 @@ export function OpticalControls() {
             ? '預設 100%＝不硬篩，自動挑近10日最少雲的一景（最看得到海面）。往左調＝只保留更晴朗的影像，但多雲季可能變全黑。'
             : '雲量過濾需 Sentinel 金鑰；NASA 免費影像為每日合成'}
         </p>
+      </div>
+
+      {/* 前後對照：左右兩層影像 + 可拖的分隔線 */}
+      <div className="rounded-lg border border-slate-700 p-2">
+        <button
+          onClick={() =>
+            setCompare(
+              compare
+                ? null
+                : {
+                    // 預設就是真正的「前後」：同來源、相隔 7 天。
+                    left: { src: 'nasa', date: daysEarlier(observationDate, 7) },
+                    right: { src: 'nasa', date: observationDate },
+                  },
+            )
+          }
+          className={`w-full rounded-lg border py-2 text-sm font-bold active:scale-95 ${
+            compare
+              ? 'border-tactical-cyan bg-tactical-cyan/20 text-tactical-cyan'
+              : 'border-slate-600 text-slate-300'
+          }`}
+        >
+          {compare ? '⇄ 關閉前後對照' : '⇄ 前後對照（拖分隔線比對）'}
+        </button>
+
+        {compare && (
+          <>
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
+              <CompareSide
+                tag="◀ 左（前）"
+                side={compare.left}
+                onChange={(left) => setCompare({ ...compare, left })}
+              />
+              <CompareSide
+                tag="右（後）▶"
+                side={compare.right}
+                onChange={(right) => setCompare({ ...compare, right })}
+              />
+            </div>
+            <div className="mt-1.5 grid grid-cols-3 gap-1">
+              {([1, 7, 30] as const).map((n) => (
+                <button
+                  key={n}
+                  onClick={() =>
+                    setCompare({
+                      left: { src: compare.right.src, date: daysEarlier(observationDate, n) },
+                      right: { src: compare.right.src, date: observationDate },
+                    })
+                  }
+                  className="rounded border border-slate-600 py-1 text-[0.625rem] text-slate-300 active:scale-95"
+                >
+                  比 {n} 天前
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[0.625rem] leading-relaxed text-slate-500">
+              拖畫面中間的 ⇄ 左右比對。同時載兩層影像，流量約兩倍。
+              亮點掃描讀的是「左側」那一層。日期往回 1–2 天比較保險（當日影像常還沒好）。
+            </p>
+          </>
+        )}
       </div>
 
       {/* 亮點掃描：在暗海上標選疑似船/物體 */}

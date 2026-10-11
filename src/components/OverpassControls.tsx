@@ -2,6 +2,10 @@ import { useTacticalStore } from '../store/tacticalStore'
 import { overpassForecast, crossingsText } from '../lib/overpass'
 import { fmtDay } from '../lib/timefmt'
 import { SatelliteQuickLinks } from './SatelliteQuickLinks'
+import { isOverhead, issFootprintKm } from '../lib/issTrack'
+import { distanceKm, bearingDeg } from '../lib/windRadar'
+import { bearingToText } from '../lib/drift'
+import { formatDist } from '../lib/units'
 
 function dayTime(epoch: number): string {
   const d = new Date(epoch)
@@ -20,6 +24,11 @@ const KIND_STYLE: Record<string, string> = {
  */
 export function OverpassControls() {
   const mapView = useTacticalStore((s) => s.mapView)
+  const showIss = useTacticalStore((s) => s.showIss)
+  const setShowIss = useTacticalStore((s) => s.setShowIss)
+  const issFix = useTacticalStore((s) => s.issFix)
+  const gotoCoord = useTacticalStore((s) => s.gotoCoord)
+  const unit = useTacticalStore((s) => s.distUnit)
   const rows = overpassForecast(Date.now())
   const today = new Date().toISOString().slice(0, 10)
 
@@ -33,6 +42,73 @@ export function OverpassControls() {
             幾點有新衛星影像可看 · 以畫面中心 {mapView.lat.toFixed(2)},{mapView.lng.toFixed(2)} 近似
           </span>
         </div>
+      </div>
+
+      {/* ISS 即時星下點：真的會動的那顆 */}
+      <div className="rounded-lg border border-tactical-cyan/40 bg-tactical-cyan/5 p-2">
+        <button
+          onClick={() => setShowIss(!showIss)}
+          className={`w-full rounded-lg border py-2 text-sm font-bold active:scale-95 ${
+            showIss
+              ? 'border-tactical-cyan bg-tactical-cyan/20 text-tactical-cyan'
+              : 'border-slate-600 text-slate-300'
+          }`}
+        >
+          {showIss ? '🛰️ 關閉 ISS 即時位置' : '🛰️ ISS 現在飛到哪（即時）'}
+        </button>
+
+        {showIss && !issFix && (
+          <p className="mt-2 text-[0.625rem] text-slate-400">定位中…（需要連網，約 10 秒更新一次）</p>
+        )}
+
+        {showIss && issFix && (
+          <>
+            {(() => {
+              const km = distanceKm(mapView.lat, mapView.lng, issFix.lat, issFix.lng)
+              const brg = bearingDeg(mapView.lat, mapView.lng, issFix.lat, issFix.lng)
+              const over = isOverhead(km, issFix.altKm)
+              return (
+                <>
+                  <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[0.6875rem]">
+                    <span className="text-slate-400">星下點</span>
+                    <span className="text-right font-mono text-slate-200">
+                      {issFix.lat.toFixed(2)}, {issFix.lng.toFixed(2)}
+                    </span>
+                    <span className="text-slate-400">高度</span>
+                    <span className="text-right font-mono text-slate-200">
+                      {issFix.altKm ? `${Math.round(issFix.altKm)} km` : '無資料'}
+                    </span>
+                    <span className="text-slate-400">對地速度</span>
+                    <span className="text-right font-mono text-slate-200">
+                      {issFix.speedKmh ? `${Math.round(issFix.speedKmh).toLocaleString()} km/h` : '無資料'}
+                    </span>
+                    <span className="text-slate-400">距畫面中心</span>
+                    <span className="text-right font-mono text-slate-200">
+                      {formatDist(km, unit)}　{bearingToText(brg)}
+                    </span>
+                    <span className="text-slate-400">可見地平圈</span>
+                    <span
+                      className={`text-right font-mono ${over ? 'text-tactical-green' : 'text-slate-400'}`}
+                    >
+                      {over ? '在圈內' : '在圈外'}（半徑 {formatDist(issFootprintKm(issFix.altKm), unit, 0)}）
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => gotoCoord(issFix.lat, issFix.lng, 3)}
+                    className="mt-2 w-full rounded border border-slate-600 py-1.5 text-[0.6875rem] text-slate-300 active:scale-95"
+                  >
+                    📍 把地圖移到 ISS 現在的位置
+                  </button>
+                </>
+              )
+            })()}
+            <p className="mt-1.5 text-[0.625rem] leading-relaxed text-slate-500">
+              這是「它現在飛在哪」的星下點，不是可見性預報。圈內只代表幾何上看得到，
+              真的要看見還得天黑、它被陽光照到、而且沒雲。10 秒更新一次，
+              所以那顆點最多落後約 75 公里（它對地約 7.66 km/s）。來源 {issFix.source}。
+            </p>
+          </>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">

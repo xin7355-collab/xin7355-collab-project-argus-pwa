@@ -8,20 +8,24 @@ import L from 'leaflet'
 //
 // 影像有幾小時延遲，所以「今天」可能還沒好；用昨天或前幾天最保險。
 
+// 各 builder 都收一個可選的 cls（CSS class）：預設 'gibs-imagery'，
+// 「前後對照」的右側圖層要改用另一個 class，這樣畫面亮點掃描
+// （BrightSpotLayer 以 img.gibs-imagery 抓像素）才只會讀左側那一層。
+
 const GIBS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best'
 
 /**
  * Esri World Imagery：免金鑰高解析度衛星/空拍鑲嵌影像，放大到岸邊很清晰
  * （非每日、無雲層時效，但解析度遠高於 MODIS 250m）。適合「看清楚地形/島礁」。
  */
-export function buildEsriImagery(): L.TileLayer {
+export function buildEsriImagery(cls = 'gibs-imagery'): L.TileLayer {
   return L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     {
       maxZoom: 19,
       maxNativeZoom: 19,
       attribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
-      className: 'gibs-imagery',
+      className: cls,
       crossOrigin: 'anonymous', // 允許畫面亮點掃描讀取像素
     },
   )
@@ -32,14 +36,14 @@ export function buildEsriImagery(): L.TileLayer {
  * 影像在外海是空的（黑），海底地形圖則畫出水深/海脊/淺灘，對海上作業(漁區、
  * 航道、暗礁)很有用。陸地為淡色地形。
  */
-export function buildEsriOcean(): L.TileLayer {
+export function buildEsriOcean(cls = 'gibs-imagery'): L.TileLayer {
   return L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}',
     {
       maxNativeZoom: 13,
       maxZoom: 19,
       attribution: 'Esri Ocean Basemap · GEBCO/NOAA',
-      className: 'gibs-imagery',
+      className: cls,
       crossOrigin: 'anonymous',
     },
   )
@@ -51,7 +55,7 @@ export function buildEsriOcean(): L.TileLayer {
  * 沒有 MODIS 那種 250m 馬賽克。適合看海岸線/島礁/港口形狀。
  * 授權：Sentinel-2 cloudless by EOX（CC BY 4.0，含 Copernicus Sentinel data）。
  */
-export function buildS2Cloudless(): L.TileLayer {
+export function buildS2Cloudless(cls = 'gibs-imagery'): L.TileLayer {
   // 用 KVP 形式的 WMTS，最穩定；年份用已發布的 2023 合成。
   const url =
     'https://tiles.maps.eox.at/wmts?layer=s2cloudless-2023_3857&style=default' +
@@ -62,13 +66,13 @@ export function buildS2Cloudless(): L.TileLayer {
     maxNativeZoom: 16,
     maxZoom: 19,
     attribution: 'Sentinel-2 cloudless 2023 © EOX IT Services（含 Copernicus 資料）',
-    className: 'gibs-imagery',
+    className: cls,
     crossOrigin: 'anonymous',
   })
 }
 
 /** 真彩色圖層（MODIS Terra，每日更新）。 */
-export function buildGibsTrueColor(date: string): L.TileLayer {
+export function buildGibsTrueColor(date: string, cls = 'gibs-imagery'): L.TileLayer {
   const layer = 'MODIS_Terra_CorrectedReflectance_TrueColor'
   const url = `${GIBS_BASE}/${layer}/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`
   return L.tileLayer(url, {
@@ -80,7 +84,7 @@ export function buildGibsTrueColor(date: string): L.TileLayer {
       [85.05, 180],
     ],
     attribution: 'Imagery © NASA EOSDIS GIBS · MODIS',
-    className: 'gibs-imagery',
+    className: cls,
     crossOrigin: 'anonymous',
   })
 }
@@ -96,7 +100,7 @@ export function buildGibsTrueColor(date: string): L.TileLayer {
  * 注意：是「夜影像」，套在彩色底圖上會偏暗，屬正常；建議搭配深色底圖看。
  * 影像有數小時延遲，故預設用前一天最保險。
  */
-export function buildGibsBoatLights(date: string): L.TileLayer {
+export function buildGibsBoatLights(date: string, cls = 'gibs-imagery'): L.TileLayer {
   const layer = 'VIIRS_SNPP_DayNightBand_ENCC'
   const url = `${GIBS_BASE}/${layer}/default/${date}/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png`
   return L.tileLayer(url, {
@@ -108,7 +112,7 @@ export function buildGibsBoatLights(date: string): L.TileLayer {
       [85.05, 180],
     ],
     attribution: 'NASA EOSDIS GIBS · VIIRS Day/Night Band（夜間漁火）',
-    className: 'gibs-imagery',
+    className: cls,
     crossOrigin: 'anonymous',
   })
 }
@@ -117,7 +121,7 @@ export function buildGibsBoatLights(date: string): L.TileLayer {
  * VIIRS（NOAA-20）每日真彩色，等同 NASA Worldview 的每日影像。感測器較新、
  * 畫面常比 MODIS 乾淨；一樣全球覆蓋含外海、免金鑰。約 375m。
  */
-export function buildGibsViirs(date: string): L.TileLayer {
+export function buildGibsViirs(date: string, cls = 'gibs-imagery'): L.TileLayer {
   const layer = 'VIIRS_NOAA20_CorrectedReflectance_TrueColor'
   const url = `${GIBS_BASE}/${layer}/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`
   return L.tileLayer(url, {
@@ -128,7 +132,7 @@ export function buildGibsViirs(date: string): L.TileLayer {
       [85.05, 180],
     ],
     attribution: 'Imagery © NASA EOSDIS GIBS · VIIRS NOAA-20',
-    className: 'gibs-imagery',
+    className: cls,
     crossOrigin: 'anonymous',
   })
 }
