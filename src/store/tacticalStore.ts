@@ -4,6 +4,7 @@ import type { DriftPoint } from '../lib/drift'
 import type { MarineEnv } from '../lib/marineEnv'
 import type { HourlySeries } from '../lib/marineSeries'
 import type { Vessel } from '../lib/ais'
+import type { ImagerySourceId, OpticalSource } from '../lib/imagerySources'
 import type { Detection } from '../lib/detection'
 import type { Typhoon } from '../lib/typhoon'
 import type { BaseLayerId } from '../lib/baseLayers'
@@ -42,6 +43,12 @@ import { loadDistUnit, persistDistUnit, type DistUnit } from '../lib/units'
  * 設計重點：UI 元件只負責「改狀態」，地圖圖層由 LayerControl 監聽狀態後
  * 自動 add/remove。這樣就不會有兩個地方同時操作 Leaflet 而邏輯打架。
  */
+/** 前後對照的左右兩側設定（來源 + 日期）。 */
+export interface CompareSpec {
+  left: { src: ImagerySourceId; date: string }
+  right: { src: ImagerySourceId; date: string }
+}
+
 interface TacticalState {
   // ── 核心：當前戰術模式（互斥）─────────────────────────
   mode: TacticalMode
@@ -52,7 +59,7 @@ interface TacticalState {
   /** 歷史觀測日期（YYYY-MM-DD）。 */
   observationDate: string
   /** 免金鑰光學影像來源：esri=高解析空拍(沿岸最銳利)、eox=Sentinel-2無雲(10m平滑)、nasa=每日MODIS(有雲/較糊)。 */
-  opticalSource: 'nasa' | 'esri' | 'eox' | 'ocean'
+  opticalSource: OpticalSource
   /** 光學模式：true=改用 Sentinel-1 雷達(穿雲/夜視)同日期，false=Sentinel-2 真彩。需 Instance ID。 */
   opticalRadar: boolean
   /** 亮點掃描：每次按鈕 +1 觸發一次掃描。 */
@@ -61,6 +68,12 @@ interface TacticalState {
   scanSensitivity: number
   /** 掃描到的疑似目標（含框、分類、AIS 比對）。 */
   brightSpots: Detection[]
+  /**
+   * 前後對照：左右各一層影像，中間可拖的分隔線。null＝關閉。
+   * 最常用的是「同來源、兩個日期」，一眼看出海面多了什麼。
+   * 注意這是 LayerControl「同時只掛一層重度影像」原則的刻意例外，流量約兩倍。
+   */
+  compare: CompareSpec | null
 
   // ── AI 分析結果 ─────────────────────────────────────
   detections: DetectionCollection | null
@@ -303,7 +316,8 @@ interface TacticalState {
   setMode: (mode: TacticalMode) => void
   setMaxCloudCover: (v: number) => void
   setObservationDate: (d: string) => void
-  setOpticalSource: (s: 'nasa' | 'esri' | 'eox' | 'ocean') => void
+  setOpticalSource: (s: OpticalSource) => void
+  setCompare: (c: CompareSpec | null) => void
   setOpticalRadar: (v: boolean) => void
   bumpScan: () => void
   setScanSensitivity: (v: number) => void
@@ -460,6 +474,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   maxCloudCover: 100,
   observationDate: today,
   opticalSource: 'esri',
+  compare: null,
   opticalRadar: false,
   scanTick: 0,
   scanSensitivity: 3,
@@ -600,6 +615,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
       trackSpacingNm: 1,
       // 注意：vessels 不清空——保留最後已知 AIS，供光學亮點掃描做「無AIS=可疑」比對。
       brightSpots: [],
+      compare: null,
       cwaTide: null,
       cwaSeaAreas: null,
       animPlaying: false,
@@ -612,7 +628,8 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
 
   setMaxCloudCover: (v) => set({ maxCloudCover: v }),
   setObservationDate: (d) => set({ observationDate: d }),
-  setOpticalSource: (s: 'nasa' | 'esri' | 'eox' | 'ocean') => set({ opticalSource: s }),
+  setOpticalSource: (s: OpticalSource) => set({ opticalSource: s }),
+  setCompare: (c) => set({ compare: c }),
   setOpticalRadar: (v) => set({ opticalRadar: v }),
   bumpScan: () => set((st) => ({ scanTick: st.scanTick + 1 })),
   setScanSensitivity: (v) => set({ scanSensitivity: v }),
@@ -752,6 +769,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
       showRadar: false,
       showRepeater: false,
       showLookout: false,
+      compare: null,
     }),
   addRepeater: (r) => {
     const item: Repeater = { ...r, id: newRepeaterId() }

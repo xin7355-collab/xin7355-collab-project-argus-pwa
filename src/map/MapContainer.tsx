@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { CompareLayer } from './CompareLayer'
 import { LayerControl } from './LayerControl'
 import { BaseLayerControl } from './BaseLayerControl'
 import { BBoxSelector } from './BBoxSelector'
@@ -79,6 +80,7 @@ export function MapContainer() {
       <div className="radar-vignette" />
       {map && <BaseLayerControl map={map} />}
       {map && <LayerControl map={map} />}
+      {map && <CompareLayer map={map} />}
       {map && <BBoxSelector map={map} />}
       {map && <AisLayer map={map} />}
       {map && <RescueLayer map={map} />}

@@ -28,6 +28,7 @@ export function LayerControl({ map }: { map: L.Map }) {
   const observationDate = useTacticalStore((s) => s.observationDate)
   const opticalSource = useTacticalStore((s) => s.opticalSource)
   const opticalRadar = useTacticalStore((s) => s.opticalRadar)
+  const compare = useTacticalStore((s) => s.compare)
   const detections = useTacticalStore((s) => s.detections)
   const setStatus = useTacticalStore((s) => s.setStatus)
 
@@ -62,6 +63,11 @@ export function LayerControl({ map }: { map: L.Map }) {
     // 註：orbit 模式為「衛星過境預報」（純資訊面板，不掛地圖動畫層）。
     // 觀測窗：光學 Sentinel-2 約每 5 天過境一次、雷達 Sentinel-1 更疏，用範圍取
     // 窗內最新一景，影像才不會忽有忽無（單一日期多半空白）。
+    // 前後對照開著時，影像層由 <CompareLayer> 獨佔（它要掛兩層並裁切其中一層）。
+    // 這裡不插手，才不會出現兩個擁有者互相拆對方圖層。
+    if (compare && mode === 'optical') {
+      return
+    }
     if (mode === 'sar') {
       // Sentinel-1 SAR 影像層（Canvas 已卸載，釋放 RAM）
       mountWms(LAYERS.sarVV, undefined, 12, 'mostRecent')
@@ -185,7 +191,7 @@ export function LayerControl({ map }: { map: L.Map }) {
       removeVector()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, maxCloudCover, observationDate, opticalSource, opticalRadar])
+  }, [mode, maxCloudCover, observationDate, opticalSource, opticalRadar, compare])
 
   // ── Vector 層：AI 偵測結果單獨更新（不重建影像層）──────
   useEffect(() => {
