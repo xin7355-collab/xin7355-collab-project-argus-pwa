@@ -127,3 +127,54 @@ export function crossingsText(hours: number[]): string {
     .map((h) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`)
     .join('／')
 }
+
+
+// ── 掃幅 vs 你關心的範圍 ───────────────────────────────────
+//
+// 使用者問「下次過境會不會拍到我這片海」。要真的回答「拍到哪裡」，
+// 需要該衛星的軌道根數（TLE）才能算出地面軌跡——本 App 取不到，
+// 不會拿假的錨點硬畫一條線出來騙人。
+//
+// 但問題有一半是可以誠實回答的：「一趟掃得夠不夠寬」。
+// 掃幅是公開且穩定的規格，畫面範圍算得出來，兩者相比就知道
+// 「這顆衛星一趟掃得住我這片海嗎，還是要拼好幾趟」。
+
+/** 網際網路地圖在赤道、zoom 0 時每像素多少公尺。 */
+const M_PER_PX_Z0 = 156543.03392
+
+/**
+ * 目前畫面大約多寬（公里）。Web Mercator 的尺度隨緯度收縮，要乘 cos(lat)。
+ */
+export function viewWidthKm(lat: number, zoom: number, widthPx: number): number {
+  const mPerPx = (M_PER_PX_Z0 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, zoom)
+  return (mPerPx * widthPx) / 1000
+}
+
+export interface SwathFit {
+  /** 一趟掃得住整個畫面寬度嗎。 */
+  coversView: boolean
+  /** 掃幅是畫面寬度的幾倍。 */
+  ratio: number
+  /** 給人看的一句話。 */
+  text: string
+}
+
+/** 把「掃幅 vs 畫面寬度」講成一句話。 */
+export function swathFit(swathKm: number, viewKm: number): SwathFit {
+  if (!Number.isFinite(viewKm) || viewKm <= 0) {
+    return { coversView: false, ratio: 0, text: "" }
+  }
+  const ratio = swathKm / viewKm
+  if (ratio >= 1) {
+    return {
+      coversView: true,
+      ratio,
+      text: `掃幅 ${Math.round(swathKm)}km 是目前畫面寬（約 ${Math.round(viewKm)}km）的 ${ratio.toFixed(1)} 倍，一趟蓋得住`,
+    }
+  }
+  return {
+    coversView: false,
+    ratio,
+    text: `掃幅 ${Math.round(swathKm)}km 比目前畫面窄（約 ${Math.round(viewKm)}km），一趟只蓋得住約 ${Math.round(ratio * 100)}%，要拼好幾趟或縮小範圍`,
+  }
+}

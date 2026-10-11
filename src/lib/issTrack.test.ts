@@ -6,7 +6,14 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ISS_NOMINAL_ALT_KM, isOverhead, issFootprintKm, parseIssFix } from './issTrack.ts'
+import {
+  ISS_INCLINATION_DEG,
+  ISS_NOMINAL_ALT_KM,
+  isOverhead,
+  issFootprintKm,
+  orbitPeriodMin,
+  parseIssFix,
+} from './issTrack.ts'
 
 test('解析 wheretheiss 格式（有高度、速度、日照）', () => {
   const fix = parseIssFix(
@@ -92,4 +99,18 @@ test('可見範圍判定：正上方在圈內，對蹠點不在', () => {
   assert.equal(isOverhead(12000, 420), false, '地球另一側不可能看到')
   // 沒有高度時要用標稱值判斷，不能因為 null 就全判 false
   assert.equal(isOverhead(100, null), true)
+})
+
+test('由高度推算軌道週期：420km 約 92.8 分鐘', () => {
+  const t = orbitPeriodMin(420)
+  assert.ok(Math.abs(t - 92.8) < 0.5, `420km 應約 92.8 分，實際 ${t.toFixed(2)}`)
+  // 越高飛越慢（克卜勒第三定律）
+  assert.ok(orbitPeriodMin(800) > t, '800km 的週期要比 420km 長')
+  // 沒有高度時退回標稱值，不能回 NaN
+  assert.ok(Math.abs(orbitPeriodMin(null) - orbitPeriodMin(ISS_NOMINAL_ALT_KM)) < 1e-9)
+  assert.ok(Number.isFinite(orbitPeriodMin(0)), '高度 0 也不能回 NaN')
+})
+
+test('ISS 傾角常數在合理範圍（決定軌跡最北/最南到哪）', () => {
+  assert.ok(ISS_INCLINATION_DEG > 51 && ISS_INCLINATION_DEG < 52, '約 51.6 度')
 })
