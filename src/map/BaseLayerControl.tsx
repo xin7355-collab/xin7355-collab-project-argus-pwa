@@ -11,6 +11,8 @@ import { isSentinelConfigured } from '../lib/config'
  */
 export function BaseLayerControl({ map }: { map: L.Map }) {
   const baseLayer = useTacticalStore((s) => s.baseLayer)
+  // 金鑰改過就重建：以前要整頁重載才會生效，會把地圖位置與模式全洗掉。
+  const configRev = useTacticalStore((s) => s.configRev)
   const setStatus = useTacticalStore((s) => s.setStatus)
   const underRef = useRef<L.TileLayer | null>(null)
   const topRef = useRef<L.TileLayer | null>(null)
@@ -27,7 +29,7 @@ export function BaseLayerControl({ map }: { map: L.Map }) {
           : 'Sentinel-2 真彩底圖：近 120 天最新低雲影像；大船呈白色亮點。無當期影像時該格會空白',
       )
     }
-  }, [baseLayer, setStatus])
+  }, [baseLayer, setStatus, configRev])
 
   // 專屬底圖 pane（z 低於 tilePane，確保光學/雷達影像永遠疊在底圖之上）
   useEffect(() => {
@@ -64,7 +66,7 @@ export function BaseLayerControl({ map }: { map: L.Map }) {
         topRef.current = null
       }
     }
-  }, [baseLayer, map])
+  }, [baseLayer, map, configRev])
 
   return null
 }

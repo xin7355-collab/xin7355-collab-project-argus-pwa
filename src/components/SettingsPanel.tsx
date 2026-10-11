@@ -1,5 +1,12 @@
 import { useRef, useState } from 'react'
-import { getConfig, saveConfig, isCwaConfigured } from '../lib/config'
+import {
+  getConfig,
+  saveConfig,
+  isAisConfigured,
+  isCwaConfigured,
+  isEdgeAiConfigured,
+  isSentinelConfigured,
+} from '../lib/config'
 import { fetchCwaJson } from '../lib/cwa'
 import { downloadBackup, restoreBackup } from '../lib/backup'
 import { setSecurePin, clearSecurePin } from '../lib/secure'
@@ -7,8 +14,11 @@ import { UI_SCALES } from '../lib/uiScale'
 import { useTacticalStore } from '../store/tacticalStore'
 
 /**
- * 設定面板：在 App 裡直接貼金鑰（存 localStorage），免去改 Vercel 環境變數
- * 再重新部署的麻煩。存檔後重載頁面讓所有圖層讀到新金鑰。
+ * 設定面板：在 App 裡直接貼金鑰（存 localStorage），免去改環境變數再重新部署的麻煩。
+ *
+ * 存檔後不再重載整頁——改成 bumpConfigRev()，訂閱它的圖層與面板會自己重建。
+ * 以前的 location.reload() 雖然有效，但會把地圖位置、目前模式、掃描結果全部洗掉，
+ * 等於填個金鑰就要重新找一次自己在哪。
  */
 export function SettingsPanel() {
   const [open, setOpen] = useState(false)
@@ -22,6 +32,9 @@ export function SettingsPanel() {
   const secureUnlocked = useTacticalStore((s) => s.secureUnlocked)
   const setSecureUnlocked = useTacticalStore((s) => s.setSecureUnlocked)
   const setSecurePromptOpen = useTacticalStore((s) => s.setSecurePromptOpen)
+  const setStatus = useTacticalStore((s) => s.setStatus)
+  const bumpConfigRev = useTacticalStore((s) => s.bumpConfigRev)
+  const configRev = useTacticalStore((s) => s.configRev)
   const [pin1, setPin1] = useState('')
   const [pin2, setPin2] = useState('')
 
@@ -56,8 +69,22 @@ export function SettingsPanel() {
 
   const save = () => {
     saveConfig(cfg)
-    location.reload() // 重載讓 WMS/AIS/AI 圖層讀到新金鑰
+    // 不重載整頁：訂閱 configRev 的圖層與面板會自己重建，地圖位置與模式都保留。
+    bumpConfigRev()
+    setStatus('設定已套用（不用重開 App）')
   }
+
+  /** 目前每把金鑰各自解鎖了什麼。填完就看得到，不必自己猜有沒有生效。 */
+  const unlocks = [
+    {
+      on: isSentinelConfigured(),
+      name: 'Sentinel 金鑰',
+      gives: 'Sentinel-2 真彩 10m、Sentinel-1 穿雲雷達、雷達船點',
+    },
+    { on: isAisConfigured(), name: 'AIS 金鑰', gives: '即時船位、亮點掃描的「無 AIS = 可疑」比對' },
+    { on: isCwaConfigured(), name: '氣象署金鑰', gives: '潮汐、海象預報、天氣特報' },
+    { on: isEdgeAiConfigured(), name: '邊緣 AI 網址', gives: 'AI 船隻辨識、CWA 代理' },
+  ]
   const doImport = (file: File) => {
     const reader = new FileReader()
     reader.onload = () => {
@@ -396,8 +423,24 @@ export function SettingsPanel() {
                 儲存並套用
               </button>
             </div>
+            {/* 解鎖狀態：哪把金鑰開了什麼。configRev 在 deps 裡，存檔後會立刻重算。 */}
+            <div key={configRev} className="mt-3 rounded-lg border border-slate-700 p-2">
+              <div className="mb-1.5 text-[0.6875rem] font-bold text-slate-300">🔑 金鑰解鎖狀態</div>
+              <div className="flex flex-col gap-1">
+                {unlocks.map((u) => (
+                  <div key={u.name} className="flex items-start gap-1.5 text-[0.625rem]">
+                    <span className="shrink-0">{u.on ? '🔓' : '🔒'}</span>
+                    <span className={`shrink-0 font-semibold ${u.on ? 'text-tactical-green' : 'text-slate-500'}`}>
+                      {u.name}
+                    </span>
+                    <span className="min-w-0 text-slate-500">{u.gives}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
             <p className="mt-3 text-[0.625rem] text-slate-500">
-              申請步驟見專案 SETUP_KEYS.md。儲存後頁面會重新整理以套用。
+              申請步驟見專案 SETUP_KEYS.md。儲存後立刻生效，不用重開 App，
+              地圖位置與目前模式都會保留。
             </p>
           </div>
         </div>

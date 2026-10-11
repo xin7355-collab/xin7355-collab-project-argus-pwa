@@ -16,6 +16,8 @@ import { fmtDay, fmtDayHour, fmtClockShort } from '../lib/timefmt'
  */
 export function TyphoonLayer({ map }: { map: L.Map }) {
   const mode = useTacticalStore((s) => s.mode)
+  // 金鑰改過就重建：以前要整頁重載才會生效，會把地圖位置與模式全洗掉。
+  const configRev = useTacticalStore((s) => s.configRev)
   const setStatus = useTacticalStore((s) => s.setStatus)
   const setActiveTyphoon = useTacticalStore((s) => s.setActiveTyphoon)
   const setActiveTyphoons = useTacticalStore((s) => s.setActiveTyphoons)
@@ -122,7 +124,7 @@ export function TyphoonLayer({ map }: { map: L.Map }) {
     if (own) drawRelative(group, own.lat, own.lng, cur.lat, cur.lng)
     map.setView([cur.lat + 1.5, cur.lng - 1.5], 6)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTyphoon, activeTyphoons, mode])
+  }, [activeTyphoon, activeTyphoons, mode, configRev])
 
   // ── 時間軸拖曳：畫「+N 小時」暴風圈預判位置（青色圈，隨拖曳移動）──
   useEffect(() => {
