@@ -17,20 +17,15 @@
 import {
   buildCatalogUrl,
   decideNotify,
-  parseBbox,
   parseScenes,
+  planUnconfiguredExit,
+  readWatchConfig,
 } from '../src/lib/imageryWatch.ts'
 
 const selfTest = process.argv.includes('--self-test')
-
-function need(name) {
-  const v = (process.env[name] || '').trim()
-  if (!v) {
-    console.error(`::error::缺少 ${name}。到 Settings → Secrets and variables → Actions 新增。`)
-    process.exit(1)
-  }
-  return v
-}
+// 手動觸發時使用者「正在設定、想知道結果」，缺東西要紅燈；
+// 排程遇到沒設定要安靜跳過，不然每 6 小時亮一次紅燈吵人。
+const requireConfig = process.argv.includes('--require-config')
 
 async function getJson(url, timeoutMs = 20000) {
   const ctrl = new AbortController()
@@ -63,7 +58,20 @@ async function notify(topic, title, body) {
 }
 
 async function main() {
-  const topic = need('NTFY_TOPIC')
+  const cfg = readWatchConfig(process.env)
+
+  if (!cfg.ok) {
+    if (cfg.error) {
+      // 填了但填錯 ≠ 還沒設定，這是真的壞掉
+      console.error(`::error::WATCH_BBOX 設定有誤：${cfg.error}`)
+      process.exit(1)
+    }
+    const plan = planUnconfiguredExit(cfg.missing, requireConfig)
+    console.log(`::${plan.level}::${plan.message}`)
+    process.exit(plan.code)
+  }
+
+  const { topic, bbox: box, hours } = cfg.config
 
   if (selfTest) {
     // 在真的排程之前，先確認整條推播管線通不通——
@@ -73,10 +81,8 @@ async function main() {
     return
   }
 
-  const box = parseBbox(need('WATCH_BBOX'))
-  const hours = Number(process.env.WATCH_HOURS || 7)
   const now = Date.now()
-  const from = now - (Number.isFinite(hours) && hours > 0 ? hours : 7) * 3600_000
+  const from = now - hours * 3600_000
 
   const all = []
   const failed = []

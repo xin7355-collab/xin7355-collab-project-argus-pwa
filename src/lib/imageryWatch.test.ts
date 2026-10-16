@@ -1,6 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildCatalogUrl, decideNotify, parseBbox, parseScenes, type Scene } from './imageryWatch.ts'
+import {
+  buildCatalogUrl,
+  decideNotify,
+  parseBbox,
+  parseScenes,
+  planUnconfiguredExit,
+  readWatchConfig,
+  type Scene,
+} from './imageryWatch.ts'
 
 // ── 範圍解析 ──────────────────────────────────────────────
 
@@ -107,4 +115,57 @@ test('時間講法：分鐘/小時/天各自正確', () => {
   assert.match(decideNotify([scene('2026-10-10T11:30:00Z', 'S')], now).body, /30 分鐘前/)
   assert.match(decideNotify([scene('2026-10-10T07:00:00Z', 'S')], now).body, /5 小時前/)
   assert.match(decideNotify([scene('2026-10-07T12:00:00Z', 'S')], now).body, /3 天前/)
+})
+
+// ── 「還沒設定」vs「真的壞掉」────────────────────────────
+// 工作守則：還沒設定要安靜等，不發失敗通知；真的壞掉才紅燈。
+// 第一版沒分，導致排程每 6 小時亮一次紅燈吵人。
+
+test('設定齊全就讀得出來', () => {
+  const r = readWatchConfig({ NTFY_TOPIC: 'abc', WATCH_BBOX: '121,23.5,122.5,25' })
+  assert.equal(r.ok, true)
+  if (!r.ok) return
+  assert.equal(r.config.topic, 'abc')
+  assert.equal(r.config.bbox.west, 121)
+  assert.equal(r.config.hours, 7, '沒給 WATCH_HOURS 要用預設 7')
+})
+
+test('WATCH_HOURS 可覆寫，壞值退回預設而不是 NaN', () => {
+  const ok = readWatchConfig({ NTFY_TOPIC: 'a', WATCH_BBOX: '121,23,122,25', WATCH_HOURS: '12' })
+  assert.equal(ok.ok && ok.config.hours, 12)
+  for (const bad of ['', 'abc', '-5', '0']) {
+    const r = readWatchConfig({ NTFY_TOPIC: 'a', WATCH_BBOX: '121,23,122,25', WATCH_HOURS: bad })
+    assert.equal(r.ok && r.config.hours, 7, `壞值 ${JSON.stringify(bad)} 要退回 7`)
+  }
+})
+
+test('沒填就列出缺哪些（空字串、只有空白都算沒填）', () => {
+  const r = readWatchConfig({ NTFY_TOPIC: '  ', WATCH_BBOX: '' })
+  assert.equal(r.ok, false)
+  if (r.ok) return
+  assert.deepEqual(r.missing, ['NTFY_TOPIC', 'WATCH_BBOX'])
+})
+
+test('填了但填錯 ≠ 還沒設定——那是真的壞掉', () => {
+  const r = readWatchConfig({ NTFY_TOPIC: 'a', WATCH_BBOX: '亂寫' })
+  assert.equal(r.ok, false)
+  if (r.ok) return
+  assert.deepEqual(r.missing, [], '不該被當成「沒填」')
+  assert.ok(r.error, '要給出錯誤原因')
+})
+
+test('排程遇到沒設定：安靜跳過（exit 0、notice 不紅燈）', () => {
+  const p = planUnconfiguredExit(['NTFY_TOPIC'], false)
+  assert.equal(p.code, 0, '不能讓排程紅燈')
+  assert.equal(p.level, 'notice')
+  assert.match(p.message, /跳過/)
+  assert.match(p.message, /設定好之後就會自動開始/, '要讓人知道不必再做別的事')
+})
+
+test('手動觸發遇到沒設定：紅燈（exit 1），因為他正在設定、需要知道', () => {
+  const p = planUnconfiguredExit(['NTFY_TOPIC', 'WATCH_BBOX'], true)
+  assert.equal(p.code, 1)
+  assert.equal(p.level, 'error')
+  assert.match(p.message, /NTFY_TOPIC、WATCH_BBOX/)
+  assert.match(p.message, /設定教學/, '要指向教學文件')
 })

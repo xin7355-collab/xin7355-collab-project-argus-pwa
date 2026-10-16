@@ -151,3 +151,79 @@ export function decideNotify(scenes: Scene[], nowMs: number): WatchVerdict {
       '開 App → 沿岸光學 → 把日期調到那一天看。',
   }
 }
+
+
+// ── 「還沒設定」與「真的壞掉」要分開 ───────────────────────
+//
+// 工作守則：還沒設定的東西要安靜等，不要發失敗通知；真的壞掉才紅燈。
+//
+// 第一版沒做這個分別——secrets 還沒填就 exit 1，於是排程每 6 小時亮一次紅燈
+// 吵使用者，而那其實只是「他還沒設定好」。排程遇到沒設定應該安靜跳過；
+// 但手動觸發是使用者「正在設定、想知道結果」，那時候缺東西就該大聲講。
+
+export interface WatchConfig {
+  topic: string
+  bbox: Bbox
+  hours: number
+}
+
+export type ConfigResult =
+  | { ok: true; config: WatchConfig }
+  | { ok: false; missing: string[] }
+  | { ok: false; missing: []; error: string }
+
+/**
+ * 讀設定。缺哪些列出來給呼叫端決定要安靜跳過還是紅燈。
+ * 格式錯（不是「沒填」而是「填錯」）一律算真的壞掉，直接回 error。
+ */
+export function readWatchConfig(env: Record<string, string | undefined>): ConfigResult {
+  const topic = (env.NTFY_TOPIC || '').trim()
+  const bboxRaw = (env.WATCH_BBOX || '').trim()
+
+  const missing: string[] = []
+  if (!topic) missing.push('NTFY_TOPIC')
+  if (!bboxRaw) missing.push('WATCH_BBOX')
+  if (missing.length) return { ok: false, missing }
+
+  let bbox: Bbox
+  try {
+    bbox = parseBbox(bboxRaw)
+  } catch (e) {
+    // 填了但填錯 ≠ 還沒設定。這是真的壞掉，要讓人看到。
+    return { ok: false, missing: [], error: e instanceof Error ? e.message : '範圍格式錯誤' }
+  }
+
+  const h = Number(env.WATCH_HOURS)
+  return { ok: true, config: { topic, bbox, hours: Number.isFinite(h) && h > 0 ? h : 7 } }
+}
+
+export interface ExitPlan {
+  code: number
+  /** GitHub Actions 的標註層級：error 會紅燈，notice 不會。 */
+  level: 'error' | 'notice'
+  message: string
+}
+
+/**
+ * 還沒設定時該怎麼收場。
+ *
+ * requireConfig=true 代表使用者是「手動觸發、正在設定」——這時缺東西要紅燈，
+ * 否則他會以為設好了。排程（requireConfig=false）則安靜跳過。
+ */
+export function planUnconfiguredExit(missing: string[], requireConfig: boolean): ExitPlan {
+  const names = missing.join('、')
+  if (requireConfig) {
+    return {
+      code: 1,
+      level: 'error',
+      message:
+        `缺少 ${names}。到 Settings → Secrets and variables → Actions 新增後再試一次。` +
+        '（設定步驟見 docs/設定教學.md）',
+    }
+  }
+  return {
+    code: 0,
+    level: 'notice',
+    message: `尚未設定 ${names}，這次排程跳過。設定好之後就會自動開始盯梢，不需要再做別的事。`,
+  }
+}

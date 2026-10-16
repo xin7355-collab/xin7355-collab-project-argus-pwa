@@ -47,8 +47,14 @@ jobs:
           WATCH_BBOX: ${{ secrets.WATCH_BBOX }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
+          # 手動觸發 → 加 --require-config：使用者正在設定，缺 secret 要紅燈讓他看到。
+          # 排程 → 不加：還沒設定就安靜跳過，不要每 6 小時亮紅燈吵人。
+          ARGS=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ARGS="--require-config"
+          fi
           if [ "${{ inputs.self_test }}" = "true" ]; then
-            node --experimental-strip-types scripts/watch-imagery.mjs --self-test
+            node --experimental-strip-types scripts/watch-imagery.mjs --self-test $ARGS
           else
-            node --experimental-strip-types scripts/watch-imagery.mjs
+            node --experimental-strip-types scripts/watch-imagery.mjs $ARGS
           fi
