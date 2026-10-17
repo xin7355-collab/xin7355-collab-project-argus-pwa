@@ -1,0 +1,21 @@
+# 暫時性：實測各家底圖在高倍率下是否真的有圖（開發沙箱連不到圖磚主機）。
+# 只用公開地標座標、不吃任何 secret。量完就刪。
+name: 探測底圖圖磚（暫時）
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: 探測各家底圖
+        run: node scripts/probe-tiles.mjs
