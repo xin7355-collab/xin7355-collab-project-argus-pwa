@@ -32,7 +32,7 @@ jobs:
     # 建置 + wrangler deploy 實測約 30 秒。給 20 分鐘已經很寬鬆。
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 先擋掉「secret 沒設」這個最常見的情況，給看得懂的訊息。
       # 這裡刻意讓它失敗而不是靜默跳過：靜默跳過會重現「合併了但手機還是舊版」
@@ -131,7 +131,7 @@ jobs:
             echo "CF_ACCOUNT_ID=$acct"
           } >> "$GITHUB_ENV"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
