@@ -1,57 +1,37 @@
-// 第三輪：NLSC 有沒有「只有中文注記、背景透明」的圖層？
-// 有的話衛星圖就能疊上中文地名（像 Google 的衛星混合），而不用拿 NLSC 自己的
-// 影像——NLSC 影像的海面是一整片假的單色，蓋掉 Esri 真的海面影像（看得到船）。
-// 讀 GetCapabilities 列出所有圖層與格式，再實際抓台北一張看是不是透明。
-
+// 第四輪：EMAP2／EMAP7／EMAP12 是什麼（標題），透明圖層在海上與高倍率的行為。
 import { PNG } from 'pngjs'
-
 const CAP = 'https://wmts.nlsc.gov.tw/wmts?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0'
-const res = await fetch(CAP, { headers: { 'User-Agent': 'ArgusPWA-tile-probe/1.0' } })
-const xml = await res.text()
-console.log('GetCapabilities', res.status, xml.length, 'bytes')
-
-const layers = []
+const xml = await (await fetch(CAP, { headers: { 'User-Agent': 'ArgusPWA-tile-probe/1.0' } })).text()
 for (const m of xml.matchAll(/<Layer>([\s\S]*?)<\/Layer>/g)) {
-  const body = m[1]
-  const id = body.match(/<ows:Identifier>([^<]+)<\/ows:Identifier>/)?.[1]
-  const title = body.match(/<ows:Title>([^<]+)<\/ows:Title>/)?.[1]
-  const fmts = [...body.matchAll(/<Format>([^<]+)<\/Format>/g)].map((x) => x[1]).join(',')
-  const gm = /GoogleMapsCompatible/.test(body)
-  if (id) layers.push({ id, title, fmts, gm })
+  const id = m[1].match(/<ows:Identifier>([^<]+)<\/ows:Identifier>/)?.[1]
+  if (!/^EMAP/.test(id || '') && id !== 'PHOTO2' && id !== 'PHOTO_MIX') continue
+  const title = m[1].match(/<ows:Title>([^<]+)<\/ows:Title>/)?.[1]
+  const fmt = [...m[1].matchAll(/<Format>([^<]+)<\/Format>/g)].map((x) => x[1]).join(',')
+  console.log(`${id.padEnd(16)} ${fmt.padEnd(12)} ${title}`)
 }
-console.log(`共 ${layers.length} 個圖層。含「注記／標註／透明／地名」字樣或 png 格式的：`)
-for (const l of layers) {
-  if (/注記|標註|註記|透明|地名|道路|文字|label/i.test(l.title || '') || /png/.test(l.fmts)) {
-    console.log(`  ${l.id.padEnd(16)} ${l.fmts.padEnd(20)} GM=${l.gm ? 'Y' : 'n'}  ${l.title}`)
-  }
-}
-console.log('\n全部圖層 id：', layers.map((l) => l.id).join(' '))
-
-// 台北 101 z16，實際抓幾個候選看透明度
 function tileXY(lat, lng, z) {
-  const n = 2 ** z
-  const x = Math.floor(((lng + 180) / 360) * n)
-  const r = (lat * Math.PI) / 180
-  const y = Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n)
-  return { x, y }
+  const n = 2 ** z, x = Math.floor(((lng + 180) / 360) * n), r = (lat * Math.PI) / 180
+  return { x, y: Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n) }
 }
-const cands = layers.filter((l) => /png/.test(l.fmts) && l.gm).map((l) => l.id).slice(0, 12)
-const { x, y } = tileXY(25.034, 121.5645, 16)
-console.log('\n實際抓台北101 z16（png 候選）：')
-for (const id of cands) {
-  const u = `https://wmts.nlsc.gov.tw/wmts/${id}/default/GoogleMapsCompatible/16/${y}/${x}`
-  try {
-    const r = await fetch(u, { headers: { 'User-Agent': 'ArgusPWA-tile-probe/1.0' } })
-    const buf = Buffer.from(await r.arrayBuffer())
-    let note = `${r.status} ${r.headers.get('content-type')} ${buf.length}B`
-    if (r.ok && (r.headers.get('content-type') || '').includes('png')) {
+const SPOTS = { '台北101': [25.034, 121.5645], '基隆港': [25.1315, 121.7418], '綠島外海': [22.6, 121.6], '廈門岸邊': [24.45, 118.08] }
+console.log('\n透明圖層：透明比例 / 有內容的像素 / 主色')
+for (const id of ['EMAP2', 'EMAP7', 'EMAP12']) {
+  for (const [spot, [lat, lng]] of Object.entries(SPOTS)) {
+    const cells = []
+    for (const z of [12, 16, 19]) {
+      const { x, y } = tileXY(lat, lng, z)
+      const r = await fetch(`https://wmts.nlsc.gov.tw/wmts/${id}/default/GoogleMapsCompatible/${z}/${y}/${x}`, { headers: { 'User-Agent': 'ArgusPWA-tile-probe/1.0' } })
+      const buf = Buffer.from(await r.arrayBuffer())
+      if (!r.ok || !(r.headers.get('content-type') || '').includes('png')) { cells.push(`z${z}:${r.status}`); continue }
       const p = PNG.sync.read(buf)
-      let transparent = 0
-      for (let i = 3; i < p.data.length; i += 4) if (p.data[i] < 10) transparent++
-      note += ` 透明比例 ${Math.round((transparent / (p.width * p.height)) * 100)}%`
+      let t = 0, rs = 0, gs = 0, bs = 0, k = 0
+      for (let i = 0; i < p.data.length; i += 4) {
+        if (p.data[i + 3] < 10) { t++; continue }
+        rs += p.data[i]; gs += p.data[i + 1]; bs += p.data[i + 2]; k++
+      }
+      const hex = k ? '#' + [rs, gs, bs].map((v) => Math.round(v / k).toString(16).padStart(2, '0')).join('') : '-'
+      cells.push(`z${z}:${Math.round((t / (p.width * p.height)) * 100)}%透明 ${hex}`)
     }
-    console.log(`  ${id.padEnd(16)} ${note}`)
-  } catch (e) {
-    console.log(`  ${id.padEnd(16)} ERR ${e.message}`)
+    console.log(`  ${id.padEnd(7)} ${spot.padEnd(6, '　')} ${cells.join('  ')}`)
   }
 }
