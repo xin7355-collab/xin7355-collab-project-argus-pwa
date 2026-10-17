@@ -18,6 +18,6 @@ jobs:
         with:
           node-version: '22'
       - name: 裝解碼器（只在這支探測用，不進專案相依）
-        run: npm i --no-save --no-package-lock jpeg-js@0.4.4 pngjs@7.0.0
+        run: npm i --no-save --no-package-lock pngjs@7.0.0
       - name: 探測各家底圖
         run: node scripts/probe-tiles.mjs
