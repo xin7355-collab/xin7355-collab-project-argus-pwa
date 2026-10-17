@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import { useTacticalStore } from '../store/tacticalStore'
-import { subscribeAIS, isAisConfigured, type Vessel, type BBox } from '../lib/ais'
+import { subscribeAIS, isAisConfigured, type AisHandle, type Vessel, type BBox } from '../lib/ais'
 import { analyzeVessel } from '../lib/aisAnomaly'
 import { buildGibsBoatLights } from '../lib/gibs'
-import { buildWmsConfig, LAYERS, isSentinelConfigured } from '../lib/sentinel'
+import { buildWmsConfig, isSentinelConfigured, layerFor } from '../lib/sentinel'
 
 /** 前一天日期（YYYY-MM-DD）——夜間漁火/雷達影像用最近可用日最保險。 */
 function yesterdayYmd(): string {
@@ -24,9 +24,12 @@ export function AisLayer({ map }: { map: L.Map }) {
   // 金鑰改過就重建：以前要整頁重載才會生效，會把地圖位置與模式全洗掉。
   const configRev = useTacticalStore((s) => s.configRev)
   const showRadarVessels = useTacticalStore((s) => s.showRadarVessels)
+  const sentinelCheck = useTacticalStore((s) => s.sentinelCheck)
   const groupRef = useRef<L.LayerGroup | null>(null)
   const lightsRef = useRef<L.TileLayer | null>(null)
   const radarRef = useRef<L.TileLayer | null>(null)
+  const handleRef = useRef<AisHandle | null>(null)
+  const keyTestTick = useTacticalStore((s) => s.aisKeyTestTick)
 
   useEffect(() => {
     if (mode !== 'ais') return
@@ -70,7 +73,9 @@ export function AisLayer({ map }: { map: L.Map }) {
       boxOf(),
       // 把「這份 AIS 現在可不可以信」送進 store，掃描才不會拿過期船位下結論。
       (usable, ageMs) => useTacticalStore.getState().setAisFresh(usable, ageMs),
+      (diag, history) => useTacticalStore.getState().setAisDiag({ ...diag, history }),
     )
+    handleRef.current = handle
 
     // 移動/縮放地圖 → 更新訂閱範圍（防抖，避免拖曳時狂送）。
     let moveTimer: ReturnType<typeof setTimeout> | null = null
@@ -84,6 +89,10 @@ export function AisLayer({ map }: { map: L.Map }) {
       map.off('moveend zoomend', onMove)
       if (moveTimer) clearTimeout(moveTimer)
       handle.stop() // 取消訂閱：關 WebSocket / 清 interval
+      handleRef.current = null
+      useTacticalStore.getState().setAisDiag(null)
+      // 測到一半離開 AIS：不清掉的話回來時按鈕會一直卡在「測試中」
+      useTacticalStore.getState().setAisKeyTest({ running: false, text: '' })
       group.clearLayers()
       map.removeLayer(group)
       groupRef.current = null
@@ -92,6 +101,21 @@ export function AisLayer({ map }: { map: L.Map }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, configRev])
+
+  // ── 🔑 測試金鑰：面板按鈕只遞增 tick，連線把手在這裡，所以由這裡跑 ──
+  useEffect(() => {
+    const handle = handleRef.current
+    if (keyTestTick === 0 || !handle) return
+    const { setAisKeyTest } = useTacticalStore.getState()
+    let alive = true
+    setAisKeyTest({ running: true, text: '測試中——借英吉利海峽收 15 秒…' })
+    handle.testKey().then((text) => {
+      if (alive) setAisKeyTest({ running: false, text })
+    })
+    return () => {
+      alive = false
+    }
+  }, [keyTestTick])
 
   // ── 🌙 VIIRS 夜間漁火 疊層（免金鑰）──────────────────
   useEffect(() => {
@@ -126,8 +150,15 @@ export function AisLayer({ map }: { map: L.Map }) {
         radarRef.current = null
       }
     }
-    if (mode === 'ais' && showRadarVessels && isSentinelConfigured()) {
-      const { url, params } = buildWmsConfig({ layer: LAYERS.sarVV, date: yesterdayYmd(), lookbackDays: 12 })
+    const layer = layerFor('sar')
+    if (mode === 'ais' && showRadarVessels && isSentinelConfigured() && sentinelCheck.status !== 'checking') {
+      if (!layer) {
+        // 以前組態裡沒有雷達圖層時照樣掛上去，伺服器回錯、Leaflet 換成透明圖磚，
+        // 看起來就是「開了沒反應」。面板上會顯示原因與加圖層的步驟。
+        setStatus(`⚠ 雷達暗船：${sentinelCheck.message || '你的 Sentinel 組態裡沒有雷達圖層'}`)
+        return remove
+      }
+      const { url, params } = buildWmsConfig({ layer, date: yesterdayYmd(), lookbackDays: 12 })
       const wms = L.tileLayer.wms(url, {
         ...params,
         opacity: 0.75,
@@ -142,7 +173,7 @@ export function AisLayer({ map }: { map: L.Map }) {
     }
     return remove
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, showRadarVessels, configRev])
+  }, [mode, showRadarVessels, configRev, sentinelCheck])
 
   return null
 }

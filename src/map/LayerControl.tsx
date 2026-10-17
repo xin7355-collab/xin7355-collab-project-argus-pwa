@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import { useTacticalStore } from '../store/tacticalStore'
-import { buildWmsConfig, LAYERS, isSentinelConfigured } from '../lib/sentinel'
+import { buildWmsConfig, isSentinelConfigured, layerFor } from '../lib/sentinel'
 import {
   buildGibsTrueColor,
   buildGibsViirs,
@@ -31,6 +31,8 @@ export function LayerControl({ map }: { map: L.Map }) {
   const compare = useTacticalStore((s) => s.compare)
   // 金鑰改過就重建：以前要整頁重載才會生效，會把地圖位置與模式全洗掉。
   const configRev = useTacticalStore((s) => s.configRev)
+  // 組態檢查完才知道雷達／光學實際叫什麼名字（見 lib/sentinelLayers.ts）
+  const sentinelCheck = useTacticalStore((s) => s.sentinelCheck)
   const detections = useTacticalStore((s) => s.detections)
   const setStatus = useTacticalStore((s) => s.setStatus)
 
@@ -72,15 +74,15 @@ export function LayerControl({ map }: { map: L.Map }) {
     }
     if (mode === 'sar') {
       // Sentinel-1 SAR 影像層（Canvas 已卸載，釋放 RAM）
-      mountWms(LAYERS.sarVV, undefined, 12, 'mostRecent')
+      mountWms('sar', undefined, 12, 'mostRecent')
     } else if (mode === 'optical') {
       // 有 Sentinel 金鑰 → 用 Sentinel-2（10m，可過濾雲量）；
       // 沒有 → 用 NASA GIBS 免金鑰真彩色（約 250m），開箱即用。
       if (isSentinelConfigured()) {
         // 穿雲模式：同日期改用 Sentinel-1 雷達（雲天/夜間看船）；否則 Sentinel-2 真彩。
         // 光學取近 10 天「最少雲」一景，最看得到海面/船，避免多雲季全黑。
-        if (opticalRadar) mountWms(LAYERS.sarVV, undefined, 12, 'mostRecent')
-        else mountWms(LAYERS.opticalTrueColor, maxCloudCover, 10, 'leastCC')
+        if (opticalRadar) mountWms('sar', undefined, 12, 'mostRecent')
+        else mountWms('optical', maxCloudCover, 10, 'leastCC')
       } else {
         mountGibs()
       }
@@ -145,7 +147,7 @@ export function LayerControl({ map }: { map: L.Map }) {
     }
 
     function mountWms(
-      layer: string,
+      kind: 'sar' | 'optical',
       maxcc: number | undefined,
       lookbackDays = 0,
       priority: 'leastCC' | 'mostRecent' = 'mostRecent',
@@ -153,6 +155,12 @@ export function LayerControl({ map }: { map: L.Map }) {
       if (!isSentinelConfigured()) {
         // SAR 沒有免金鑰替代來源，僅提示。
         setStatus('⚠ 雷達影像需要 Sentinel 金鑰（⚙️ 設定貼上後啟用）')
+        return
+      }
+      const layer = layerFor(kind)
+      if (!layer) {
+        // 組態裡沒有這種圖層：掛上去只會是一片透明，等於默默失敗。明講要去加。
+        setStatus(`⚠ ${sentinelCheck.message || '你的 Sentinel 組態裡沒有這種圖層'}`)
         return
       }
       const { url, params } = buildWmsConfig({ layer, date: observationDate, maxCloudCover: maxcc, lookbackDays, priority })
@@ -165,7 +173,7 @@ export function LayerControl({ map }: { map: L.Map }) {
       // 只提示、不再自動跳成另一種來源——維持「同一種真實影像」，避免忽真彩忽鑲嵌
       // 讓人誤會（使用者回饋：一般人會以為是同一時間的畫面）。無資料就改日期/穿雲。
       let warned = false
-      const isRadar = layer === LAYERS.sarVV
+      const isRadar = kind === 'sar'
       wms.on('tileerror', () => {
         if (!warned) {
           warned = true
@@ -193,7 +201,7 @@ export function LayerControl({ map }: { map: L.Map }) {
       removeVector()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, maxCloudCover, observationDate, opticalSource, opticalRadar, compare, configRev])
+  }, [mode, maxCloudCover, observationDate, opticalSource, opticalRadar, compare, configRev, sentinelCheck])
 
   // ── Vector 層：AI 偵測結果單獨更新（不重建影像層）──────
   useEffect(() => {

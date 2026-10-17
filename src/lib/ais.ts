@@ -20,15 +20,18 @@ export interface Vessel {
 }
 
 import { getConfig, isAisConfigured } from './config'
+import { backoffMs, evaluateWatchdog, initialWatchdogState, isAuthFailure, type AisHealth } from './aisWatchdog'
 import {
-  backoffMs,
-  evaluateWatchdog,
-  initialWatchdogState,
-  isAuthFailure,
-  looksLikeBadKey,
-  nextQuickDeaths,
-  type AisHealth,
-} from './aisWatchdog'
+  chooseRoute,
+  diagnose,
+  KEY_TEST_BOX,
+  ROUTE_NAME,
+  runKeyTest,
+  type AisRoute,
+  type ConnAttempt,
+  type Diagnosis,
+  type ProbeSocket,
+} from './aisRoute'
 
 export { isAisConfigured }
 
@@ -40,12 +43,16 @@ type StatusListener = (status: string) => void
  * 必須改回報「比不了」，不可以拿過期船位硬比——那會兩個方向都判錯。
  */
 type FreshListener = (usable: boolean, ageMs: number | null) => void
+/** 每條連線結束時回報：診斷結論 + 最近幾次連線紀錄（面板顯示用）。 */
+type DiagListener = (diag: Diagnosis, history: ConnAttempt[]) => void
 /** AISStream 邊界框：[[南緯,西經],[北緯,東經]]。 */
 export type BBox = [[number, number], [number, number]]
 /** 訂閱控制代把手：停止 + 動態更新訂閱範圍（跟著地圖視野）。 */
 export interface AisHandle {
   stop: () => void
   setBox: (box: BBox) => void
+  /** 借英吉利海峽收 15 秒，分出「金鑰壞」還是「這片海沒資料」。回傳給人看的結論。 */
+  testKey: () => Promise<string>
 }
 
 /** 台灣周邊預設框（初次訂閱用）。 */
@@ -91,9 +98,10 @@ export function subscribeAIS(
   onStatus?: StatusListener,
   box: BBox = TW_BOX,
   onFresh?: FreshListener,
+  onDiag?: DiagListener,
 ): AisHandle {
   const key = getConfig().aisKey
-  if (key) return subscribeReal(onUpdate, key, onStatus, box, onFresh)
+  if (key) return subscribeReal(onUpdate, key, onStatus, box, onFresh, onDiag)
   // 模擬資料永遠是「現做的」，但它不是真的——標成不可信任，
   // 免得沒金鑰時掃描拿假船位去判斷真目標。
   onFresh?.(false, null)
@@ -118,28 +126,51 @@ function subscribeSim(onUpdate: Listener): AisHandle {
   }
   step()
   const timer = setInterval(step, 2000)
-  return { stop: () => clearInterval(timer), setBox: () => {} }
+  return {
+    stop: () => clearInterval(timer),
+    setBox: () => {},
+    testKey: async () => '目前是模擬船隻，沒有金鑰可測。先到 ⚙️ 設定填 AISStream 金鑰。',
+  }
 }
 
-/** 真實：連 aisstream.io WebSocket（含狀態回報、斷線自動重連、船名/船種）。 */
+/**
+ * 兩條路：
+ * - relay：經自家 Worker 轉接（/api/ais，見 worker/index.js）。aisstream 官方不支援瀏覽器直連、
+ *   建議走伺服器端，所以優先。
+ * - direct：直連 aisstream。轉接被擋（例如對方擋 Cloudflare 的 IP）時的備援。
+ */
+function routeUrl(route: AisRoute): string {
+  if (route === 'direct') return 'wss://stream.aisstream.io/v0/stream'
+  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/ais`
+}
+
+/** 診斷只看最近幾次：太舊的紀錄（例如換金鑰前的）會讓結論失準。 */
+const HISTORY_MAX = 6
+
+/** 真實：連 aisstream.io WebSocket（含狀態回報、斷線自動重連、換路、診斷、船名/船種）。 */
 function subscribeReal(
   onUpdate: Listener,
   key: string,
   onStatus: StatusListener | undefined,
   initBox: BBox,
   onFresh?: FreshListener,
+  onDiag?: DiagListener,
 ): AisHandle {
   const byMmsi = new Map<string, Vessel>()
   let ws: WebSocket | null = null
   let closedByUs = false
+  let testing = false
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let noDataTimer: ReturnType<typeof setTimeout> | null = null
   let gotAny = false
   let attempt = 0
-  // 這一條連線有沒有收到東西、連續幾次「一連上就被切斷」（金鑰無效的特徵，見 aisWatchdog）
-  let gotThisConn = false
+  // 每條連線的紀錄：用來選路線、也用來告訴使用者到底卡在哪（見 aisRoute.ts）
+  let history: ConnAttempt[] = []
+  let startRoute: AisRoute = 'relay'
+  let route: AisRoute = 'relay'
+  let msgsThisConn = 0
   let openedAt: number | null = null
-  let quickDeaths = 0
+  let badKey = false
   // 看門狗：存活看「有沒有資料」，不看 socket 狀態。詳見 aisWatchdog.ts。
   const wd = initialWatchdogState()
   let heartbeat: ReturnType<typeof setInterval> | null = null
@@ -148,24 +179,58 @@ function subscribeReal(
   let curBox: BBox = capBox(initBox) // 目前訂閱範圍（跟著地圖視野更新）
 
   const status = (s: string) => onStatus?.(s)
-  const subMsg = () =>
+  const subMsg = (box: BBox = curBox) =>
     JSON.stringify({
       APIKey: key,
-      BoundingBoxes: [curBox],
+      BoundingBoxes: [box],
       FilterMessageTypes: ['PositionReport', 'ShipStaticData'],
     })
   const emit = () => onUpdate([...byMmsi.values()].filter((v) => inBox(v, curBox)))
 
-  const connect = () => {
-    // 已判定金鑰有問題時不要用「重新連線中」蓋掉那句說明
-    if (!looksLikeBadKey(quickDeaths)) {
-      status(attempt === 0 ? 'AIS：連線 aisstream.io…' : `AIS：重新連線中（第 ${attempt} 次）…`)
+  /** 一條連線結束：記下來、重新診斷。回傳診斷結論。 */
+  const record = (code: number, reason: string): Diagnosis => {
+    history = [
+      ...history,
+      {
+        route,
+        opened: openedAt !== null,
+        aliveMs: openedAt === null ? null : Math.round(mono() - openedAt),
+        msgs: msgsThisConn,
+        code,
+        reason,
+      },
+    ].slice(-HISTORY_MAX)
+    const d = diagnose(history)
+    onDiag?.(d, history)
+    return d
+  }
+
+  /** 把舊連線拔乾淨再關：不拔的話它晚到的 onclose 會再排一次重連，變成同時兩條、互相擠掉。 */
+  const detach = () => {
+    if (!ws) return
+    ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null
+    try {
+      ws.close()
+    } catch {
+      /* 已經壞掉就算了 */
     }
-    // 經自家 Worker 轉接（/api/ais），不直連 aisstream：
-    // aisstream 官方不支援瀏覽器直連，建議走伺服器端代理。見 worker/index.js。
-    gotThisConn = false
+    ws = null
+  }
+
+  const connect = () => {
+    if (closedByUs || testing) return
+    route = chooseRoute(history, startRoute)
+    // 已判定金鑰有問題時不要用「重新連線中」蓋掉那句說明
+    if (!badKey) {
+      status(
+        attempt === 0
+          ? `AIS：連線 aisstream.io（${ROUTE_NAME[route]}）…`
+          : `AIS：重新連線中（第 ${attempt} 次，${ROUTE_NAME[route]}）…`,
+      )
+    }
+    msgsThisConn = 0
     openedAt = null
-    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/ais`)
+    ws = new WebSocket(routeUrl(route))
 
     ws.onopen = () => {
       // 刻意不在這裡把 attempt 歸零：握手成功不代表這條連線會送資料。
@@ -176,18 +241,25 @@ function subscribeReal(
       openedAt = mono()
       status('AIS：已連線，訂閱畫面範圍船位，等待回報…（移動地圖即訂閱該區）')
       ws?.send(subMsg())
-      // 15 秒內完全沒有任何訊息（連錯誤都沒有）→ 幾乎必為金鑰/連線數問題。
+      // 15 秒內完全沒有任何訊息（連錯誤都沒有）→ 金鑰/連線數問題，或這片海沒接收站。
       if (noDataTimer) clearTimeout(noDataTimer)
       noDataTimer = setTimeout(() => {
+        // 這條連線還沒斷，但已經可以下結論（多半是「這片海沒資料」）——不等它斷才更新面板，
+        // 它可能永遠不會斷。
+        if (msgsThisConn === 0 && openedAt !== null)
+          onDiag?.(
+            diagnose([...history, { route, opened: true, aliveMs: mono() - openedAt, msgs: 0, code: 0, reason: '仍連線中' }]),
+            history,
+          )
         if (!gotAny)
           status(
-            'AIS：已連線但持續無回應。最可能：①同一金鑰在其它裝置/分頁也開著（免費版限 1 連線，請只留一處）②金鑰打錯/無效 ③額度用盡。到 aisstream.io 核對。',
+            'AIS：已連線但還沒有船位。可能是這片海附近沒有 aisstream 接收站，或金鑰有問題——' +
+              '到 AIS 面板按「測試金鑰」就能分出來。',
           )
       }, 15000)
     }
 
     ws.onmessage = (ev) => {
-      gotThisConn = true
       // 收到任何訊息（含錯誤）就取消「15 秒無回應」計時，避免通用訊息蓋掉真實原因。
       if (noDataTimer) {
         clearTimeout(noDataTimer)
@@ -224,7 +296,10 @@ function subscribeReal(
         // 不以握手成功為準——握手成功後長期沉默正是要抓的那種故障。
         wd.lastDataAt = mono()
         wd.authBlocked = false
+        badKey = false
         attempt = 0
+        // 第一筆資料就告訴面板「通了」，不用等這條連線結束才更新診斷。
+        if (msgsThisConn++ === 0) onDiag?.({ verdict: 'ok', text: `連線正常（${ROUTE_NAME[route]}）。` }, history)
         const prev = byMmsi.get(mmsi)
 
         if (type === 'PositionReport') {
@@ -269,30 +344,33 @@ function subscribeReal(
     }
 
     ws.onclose = (ev) => {
-      if (closedByUs) return
+      ws = null
       wd.connectedAt = null
+      if (noDataTimer) clearTimeout(noDataTimer)
       attempt++
-      quickDeaths = nextQuickDeaths(quickDeaths, openedAt === null ? null : mono() - openedAt, gotThisConn)
-      if (looksLikeBadKey(quickDeaths) && !wd.authBlocked) {
+      if (ev?.reason && isAuthFailure(String(ev.reason))) wd.authBlocked = true
+      const d = record(ev?.code ?? 0, ev?.reason ?? '')
+      badKey = d.verdict === 'badKey'
+      if (badKey && !wd.authBlocked) {
         // aisstream 對無效金鑰是「連上一秒就切斷、不給任何原因」（實測），
         // 不在這裡講清楚，使用者只會看到無止盡的「重新連線中」。
-        if (noDataTimer) clearTimeout(noDataTimer)
-        status(
-          `AIS：aisstream 一連上就切斷連線、沒給原因（連續 ${quickDeaths} 次）——這幾乎都是金鑰無效。` +
-            '請到 aisstream.io 登入 → API Keys 複製金鑰，貼到 ⚙️ 設定的「AISStream 金鑰」再試。',
-        )
+        status(`AIS：${d.text}`)
         reconnectTimer = setTimeout(connect, 60_000)
         return
       }
+      const next = chooseRoute(history, startRoute)
       // 金鑰被拒時用很慢的節奏探測，不要走正常退避梯子猛敲。
-      const delay = wd.authBlocked ? 3_600_000 : backoffMs(attempt - 1)
+      // 換路線時不用退避：是另一條路，不是對同一個地方猛敲；越快試完越快知道是金鑰還是路線。
+      const delay = wd.authBlocked ? 3_600_000 : next !== route ? 2_000 : backoffMs(attempt - 1)
       // aisstream 常把「金鑰無效」等原因放在 close reason，攤開顯示以利排查。
       const why = ev?.reason ? `（原因：${ev.reason}）` : ev?.code ? `（code ${ev.code}）` : ''
-      if (ev?.reason && isAuthFailure(String(ev.reason))) wd.authBlocked = true
+      const switching = next !== route ? `，改走${ROUTE_NAME[next]}` : ''
       status(
         wd.authBlocked
           ? `AIS：金鑰被拒${why}。換金鑰前重連沒有意義，已改為低頻探測。`
-          : `AIS：連線中斷${why}，${Math.round(delay / 1000)} 秒後重連…`,
+          : d.verdict === 'silent' || d.verdict === 'unreachable'
+            ? `AIS：${d.text}`
+            : `AIS：連線中斷${why}，${Math.round(delay / 1000)} 秒後重連${switching}…`,
       )
       reconnectTimer = setTimeout(connect, delay)
     }
@@ -303,6 +381,7 @@ function subscribeReal(
   // 心跳：socket 不會自己告訴你它死了，只能定期檢查「上次收到資料多久了」。
   // 20 秒一次夠即時，又不至於在手機上一直喚醒。
   heartbeat = setInterval(() => {
+    if (testing) return
     const v = evaluateWatchdog(wd, mono())
     onFresh?.(v.usable, v.ageMs)
     // 只在狀態「改變」時出聲，不要每 20 秒跳一次提示。
@@ -315,12 +394,8 @@ function subscribeReal(
       wd.connectedAt = null
       wd.lastDataAt = null
       lastHealth = null
-      try {
-        ws?.close()
-      } catch {
-        /* 已經壞掉就算了，下面照樣重連 */
-      }
-      ws = null
+      detach()
+      record(0, '太久沒資料，主動重連')
       attempt++
       if (reconnectTimer) clearTimeout(reconnectTimer)
       reconnectTimer = setTimeout(connect, 1000)
@@ -333,11 +408,7 @@ function subscribeReal(
       if (reconnectTimer) clearTimeout(reconnectTimer)
       if (noDataTimer) clearTimeout(noDataTimer)
       if (heartbeat) clearInterval(heartbeat)
-      try {
-        ws?.close()
-      } catch {
-        /* noop */
-      }
+      detach()
     },
     // 更新訂閱範圍（地圖移動時呼叫）：重送訂閱訊息、清掉離開視野的舊船。
     setBox: (box: BBox) => {
@@ -352,6 +423,34 @@ function subscribeReal(
       // 修剪掉離目前視野太遠的船（避免累積成滿圖殘影）。
       for (const [mmsi, v] of byMmsi) if (!inBox(v, curBox)) byMmsi.delete(mmsi)
       emit()
+    },
+    testKey: async () => {
+      if (testing) return '測試進行中…'
+      // 先停掉正式連線：免費金鑰同時開兩條可能互相擠掉，測出來會不準。
+      testing = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (noDataTimer) clearTimeout(noDataTimer)
+      detach()
+      wd.connectedAt = null
+      status('AIS：測試金鑰中——借英吉利海峽收 15 秒…')
+      try {
+        const { result, text } = await runKeyTest(
+          (r) => new WebSocket(routeUrl(r)) as unknown as ProbeSocket,
+          subMsg(KEY_TEST_BOX),
+        )
+        if (result.msgs > 0) {
+          // 測出哪條路通就從那條重來；舊紀錄是換路前的，留著會誤導診斷。
+          startRoute = result.route
+          history = []
+          badKey = false
+          wd.authBlocked = false
+        }
+        return `${text}（${ROUTE_NAME[result.route]}）`
+      } finally {
+        testing = false
+        attempt = 0
+        if (!closedByUs) connect()
+      }
     },
   }
 }

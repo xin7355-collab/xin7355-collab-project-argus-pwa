@@ -1,6 +1,6 @@
 import L from 'leaflet'
 import { getConfig, isSentinelConfigured } from './config'
-import { LAYERS } from './sentinel'
+import { layerFor } from './sentinel'
 import { BASE_STYLES, DEFAULT_BASE, type BaseLayerId, type TileSpec } from './basemaps'
 import { classifyTile, shouldHide, type HideRule, type TileSample } from './tileFilter'
 
@@ -87,26 +87,30 @@ function buildSpec(spec: TileSpec): L.TileLayer {
   return layer
 }
 
+/** Sentinel 底圖用不了（沒金鑰，或組態裡沒有對應圖層）。 */
+function sentinelUnavailable(id: BaseLayerId): boolean {
+  if (id !== 'sentinel2' && id !== 'sentinel1') return false
+  return !isSentinelConfigured() || !layerFor(id === 'sentinel1' ? 'sar' : 'optical')
+}
+
 /**
  * 組出某個底圖樣式的所有圖層（由下往上）。
- * Sentinel 沒設金鑰時退回預設地圖——不然會整片空白，使用者以為 App 壞了。
+ * Sentinel 用不了時退回預設地圖——不然會整片空白，使用者以為 App 壞了。
  */
 export function buildBaseStyle(id: BaseLayerId): L.TileLayer[] {
   if (id === 'sentinel2' || id === 'sentinel1') {
-    if (!isSentinelConfigured()) return buildBaseStyle(DEFAULT_BASE)
+    if (sentinelUnavailable(id)) return buildBaseStyle(DEFAULT_BASE)
     return [
       id === 'sentinel1'
-        ? sentinelBase(LAYERS.sarVV, { days: 30 })
-        : sentinelBase(LAYERS.opticalTrueColor, { days: 120, maxcc: 40 }),
+        ? sentinelBase(layerFor('sar')!, { days: 30 })
+        : sentinelBase(layerFor('optical')!, { days: 120, maxcc: 40 }),
     ]
   }
   return BASE_STYLES[id].layers.map(buildSpec)
 }
 
-/** 這個樣式實際會畫的背景色（Sentinel 沒金鑰時跟著退回的樣式走）。 */
+/** 這個樣式實際會畫的背景色（Sentinel 用不了時跟著退回的樣式走）。 */
 export function styleBackground(id: BaseLayerId): string {
-  if ((id === 'sentinel2' || id === 'sentinel1') && !isSentinelConfigured()) {
-    return BASE_STYLES[DEFAULT_BASE].background
-  }
+  if (sentinelUnavailable(id)) return BASE_STYLES[DEFAULT_BASE].background
   return BASE_STYLES[id].background
 }

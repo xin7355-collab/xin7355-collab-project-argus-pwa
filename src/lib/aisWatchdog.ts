@@ -169,35 +169,3 @@ export function isAuthFailure(errorText: string): boolean {
     t.includes('authentication')
   )
 }
-
-
-// ── 「一連上就被切斷」＝金鑰多半無效 ─────────────────────────
-//
-// 實測（2026-10，GitHub Actions 打真的 aisstream）：送出無效金鑰後，
-// 它約 1 秒就把連線切斷，code 1006、**沒有任何原因文字，也不回錯誤訊息**。
-// 所以上面 isAuthFailure 看文字的判斷永遠等不到東西，App 只會一直顯示
-// 「連線中斷，幾秒後重連」，使用者完全不知道是金鑰的問題。
-//
-// 改看行為：連上後很快就斷、而且一筆資料都沒收到，連續發生幾次，
-// 幾乎就是金鑰被拒（網路不穩的斷線通常不會「每次都剛好一秒」）。
-
-/** 連上後多快斷線算「秒斷」。 */
-export const QUICK_DEATH_MS = 5_000
-/** 連續秒斷幾次就判定金鑰有問題。一次可能只是網路抖動。 */
-export const QUICK_DEATHS_FOR_KEY = 2
-
-/**
- * 更新連續秒斷次數。
- * @param prev 之前連續秒斷幾次
- * @param aliveMs 這條連線從連上到斷線活了多久；null＝根本沒連上（網路問題，不算）
- * @param gotData 這條連線有沒有收到過任何一筆資料
- */
-export function nextQuickDeaths(prev: number, aliveMs: number | null, gotData: boolean): number {
-  if (gotData) return 0
-  if (aliveMs === null) return prev
-  return aliveMs < QUICK_DEATH_MS ? prev + 1 : 0
-}
-
-export function looksLikeBadKey(quickDeaths: number): boolean {
-  return quickDeaths >= QUICK_DEATHS_FOR_KEY
-}

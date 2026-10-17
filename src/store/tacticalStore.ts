@@ -4,6 +4,8 @@ import type { DriftPoint } from '../lib/drift'
 import type { MarineEnv } from '../lib/marineEnv'
 import type { HourlySeries } from '../lib/marineSeries'
 import type { Vessel } from '../lib/ais'
+import type { ConnAttempt, Diagnosis } from '../lib/aisRoute'
+import { IDLE_CHECK, type SentinelCheck } from '../lib/sentinelLayers'
 import type { ImagerySourceId, OpticalSource } from '../lib/imagerySources'
 import { baseForOptical, daysEarlier, opticalForBase } from '../lib/imagerySources'
 import type { Detection } from '../lib/detection'
@@ -165,10 +167,19 @@ interface TacticalState {
   aisUsable: boolean
   /** 距離最後一筆船位多久（毫秒）。沒收過回 null。 */
   aisAgeMs: number | null
+  /** AIS 連線診斷（每條連線結束時更新），面板用來講「到底卡在哪」。 */
+  aisDiag: (Diagnosis & { history: ConnAttempt[] }) | null
+  /** 「測試金鑰」：按一次 tick+1，AisLayer 收到就跑；結果放 aisKeyTest。 */
+  aisKeyTestTick: number
+  aisKeyTest: { running: boolean; text: string }
   /** 疊「VIIRS 夜間漁火」衛星圖層（免金鑰，看外海漁船燈光）。 */
   showBoatLights: boolean
   /** 疊「Sentinel-1 雷達暗船」圖層（需金鑰，看不廣播 AIS 的金屬船）。 */
   showRadarVessels: boolean
+  /** Sentinel 組態檢查結果（實際有哪些圖層、ID 對不對）。影像圖層依它決定掛哪一層。 */
+  sentinelCheck: SentinelCheck
+  /** 按「重新檢查」+1。不借用 configRev：那會連 AIS 連線一起重建。 */
+  sentinelCheckTick: number
 
   // ── 海況熱力圖 (seastate) ────────────────────────────
   /** 熱力圖顯示哪個欄位：海溫或浪高。 */
@@ -385,8 +396,13 @@ interface TacticalState {
   setRescueStatus: (s: TacticalState['rescueStatus']) => void
   setVessels: (v: Vessel[]) => void
   setAisFresh: (usable: boolean, ageMs: number | null) => void
+  setAisDiag: (d: TacticalState['aisDiag']) => void
+  requestAisKeyTest: () => void
+  setAisKeyTest: (r: TacticalState['aisKeyTest']) => void
   setShowBoatLights: (b: boolean) => void
   setShowRadarVessels: (b: boolean) => void
+  setSentinelCheck: (c: SentinelCheck) => void
+  recheckSentinel: () => void
   setOwnPosition: (p: TacticalState['ownPosition']) => void
   toggleTrackRecording: () => void
   pushTrackPoint: (p: { lat: number; lng: number }) => void
@@ -566,8 +582,13 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   vessels: [],
   aisUsable: false,
   aisAgeMs: null,
+  aisDiag: null,
+  aisKeyTestTick: 0,
+  aisKeyTest: { running: false, text: '' },
   showBoatLights: false,
   showRadarVessels: false,
+  sentinelCheck: IDLE_CHECK,
+  sentinelCheckTick: 0,
   seaStateField: 'sst',
   seaStateRange: null,
   activeTyphoon: null,
@@ -756,8 +777,13 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   setRescueStatus: (s) => set({ rescueStatus: s }),
   setVessels: (v) => set({ vessels: v }),
   setAisFresh: (usable, ageMs) => set({ aisUsable: usable, aisAgeMs: ageMs }),
+  setAisDiag: (d) => set({ aisDiag: d }),
+  requestAisKeyTest: () => set((st) => ({ aisKeyTestTick: st.aisKeyTestTick + 1 })),
+  setAisKeyTest: (r) => set({ aisKeyTest: r }),
   setShowBoatLights: (b) => set({ showBoatLights: b }),
   setShowRadarVessels: (b) => set({ showRadarVessels: b }),
+  setSentinelCheck: (c) => set({ sentinelCheck: c }),
+  recheckSentinel: () => set((st) => ({ sentinelCheckTick: st.sentinelCheckTick + 1 })),
   setOwnPosition: (p) => set({ ownPosition: p }),
   toggleTrackRecording: () =>
     set((st) => ({ trackRecording: !st.trackRecording, ownTrack: st.trackRecording ? st.ownTrack : [] })),

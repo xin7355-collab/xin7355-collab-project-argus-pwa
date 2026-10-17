@@ -3,6 +3,8 @@ import { useTacticalStore } from '../store/tacticalStore'
 import { isAisConfigured } from '../lib/ais'
 import { isSentinelConfigured } from '../lib/sentinel'
 import { analyzeVessels, analyzeApproach } from '../lib/aisAnomaly'
+import { ROUTE_NAME, type ConnAttempt } from '../lib/aisRoute'
+import { SentinelLayerStatus } from './SentinelLayerStatus'
 
 /** AIS 模式控制面板：船舶數、搜尋、異常警示、衛星船隻疊層（漁火／雷達）。 */
 export function AisControls() {
@@ -17,6 +19,9 @@ export function AisControls() {
   const mapView = useTacticalStore((s) => s.mapView)
   const setStatus = useTacticalStore((s) => s.setStatus)
   const ownPosition = useTacticalStore((s) => s.ownPosition)
+  const aisDiag = useTacticalStore((s) => s.aisDiag)
+  const keyTest = useTacticalStore((s) => s.aisKeyTest)
+  const requestAisKeyTest = useTacticalStore((s) => s.requestAisKeyTest)
   const analyses = analyzeVessels(vessels)
   const flagged = analyses.filter((a) => a.level !== 'ok')
   // 🎯 趨近我方（需 GPS 定位）：會近距離通過的船，碰撞/接觸預警
@@ -168,12 +173,45 @@ export function AisControls() {
         </div>
       )}
 
-      {vessels.length === 0 && (
-        <p className="text-[0.625rem] leading-relaxed text-amber-500/90">
-          {isAisConfigured()
-            ? '尚未收到船位——AIS 訂閱「目前畫面範圍」，移動/縮放地圖到想看的海域即會訂閱該區；每艘船隔數十秒才回報一次，請稍候。'
-            : '模擬船隻在台灣周邊，若看不到請縮小地圖。'}
-        </p>
+      {vessels.length === 0 && !isAisConfigured() && (
+        <p className="text-[0.625rem] leading-relaxed text-amber-500/90">模擬船隻在台灣周邊，若看不到請縮小地圖。</p>
+      )}
+
+      {/* 🩺 連線診斷：有金鑰、但還沒有船時才出現——有船就代表一切正常，不佔版面 */}
+      {isAisConfigured() && vessels.length === 0 && (
+        <div
+          className={`flex flex-col gap-1.5 rounded border p-2 ${
+            aisDiag?.verdict === 'badKey' || aisDiag?.verdict === 'unreachable'
+              ? 'border-rose-500/50 bg-rose-500/10'
+              : 'border-amber-500/40 bg-amber-500/5'
+          }`}
+        >
+          <div className="text-[0.6875rem] font-semibold text-slate-200">🩺 還沒收到船位：連線診斷</div>
+          <p className="text-[0.625rem] leading-relaxed text-slate-300">
+            {aisDiag?.text ??
+              'AIS 只訂閱「目前畫面範圍」，每艘船隔數十秒才回報一次，請稍候；移動地圖即改訂閱該區。'}
+          </p>
+          <button
+            onClick={requestAisKeyTest}
+            disabled={keyTest.running}
+            className="rounded border border-tactical-cyan/60 bg-tactical-cyan/10 px-2 py-1.5 text-[0.6875rem] font-bold text-tactical-cyan active:scale-95 disabled:opacity-60"
+          >
+            {keyTest.running ? '⏳ 測試中（約 15–30 秒）…' : '🔑 測試金鑰（借英吉利海峽收 15 秒）'}
+          </button>
+          {keyTest.text && !keyTest.running && (
+            <p className="text-[0.625rem] leading-relaxed text-slate-200">{keyTest.text}</p>
+          )}
+          {aisDiag && aisDiag.history.length > 0 && (
+            <details className="text-[0.5625rem] text-slate-400">
+              <summary className="cursor-pointer">最近 {aisDiag.history.length} 次連線紀錄</summary>
+              <ul className="mt-1 flex flex-col gap-0.5 font-mono">
+                {aisDiag.history.map((a, i) => (
+                  <li key={i}>{attemptText(a)}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
       )}
 
       {/* 衛星「看不廣播 AIS 的船」疊層 —— 全部畫在同一張地圖，不開網頁 */}
@@ -220,6 +258,7 @@ export function AisControls() {
             {!isSentinelConfigured() ? '去設定 ›' : showRadarVessels ? '開' : '關'}
           </span>
         </button>
+        {showRadarVessels && <SentinelLayerStatus need="sar" />}
         <p className="px-0.5 text-[0.625rem] leading-relaxed text-slate-500">
           雷達看金屬船身，穿雲、日夜都行。<b className="text-tactical-cyan">雷達有亮點、AIS 卻沒三角形＝可疑暗船</b>（非法越界／關 AIS）。
           {!isSentinelConfigured() && '　⚙️ 設定填 Sentinel 金鑰後啟用。'}
@@ -240,4 +279,12 @@ export function AisControls() {
       )}
     </div>
   )
+}
+
+/** 一行講完一次連線：走哪條路、有沒有連上、活多久、收到幾筆、怎麼斷的。 */
+function attemptText(a: ConnAttempt): string {
+  const how = a.reason || (a.code ? `code ${a.code}` : '')
+  if (!a.opened) return `${ROUTE_NAME[a.route]}：沒連上${how ? `（${how}）` : ''}`
+  const alive = (a.aliveMs ?? 0) < 60_000 ? `${((a.aliveMs ?? 0) / 1000).toFixed(1)} 秒` : `${Math.round((a.aliveMs ?? 0) / 60_000)} 分`
+  return `${ROUTE_NAME[a.route]}：連上 ${alive}、收到 ${a.msgs} 筆${how ? `、${how}` : ''}`
 }

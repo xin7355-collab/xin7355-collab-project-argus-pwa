@@ -11,6 +11,7 @@ import { fetchCwaJson } from '../lib/cwa'
 import { downloadBackup, restoreBackup } from '../lib/backup'
 import { setSecurePin, clearSecurePin } from '../lib/secure'
 import { UI_SCALES } from '../lib/uiScale'
+import { SentinelLayerStatus } from './SentinelLayerStatus'
 import { useTacticalStore } from '../store/tacticalStore'
 
 /**
@@ -206,6 +207,10 @@ export function SettingsPanel() {
               onChange={(v) => setCfg({ ...cfg, sentinelInstanceId: v })}
               placeholder="例如 12345678-abcd-..."
             />
+            <div className="mb-2 flex flex-col gap-1">
+              <SentinelLayerStatus need="optical" />
+              <SentinelLayerStatus need="sar" />
+            </div>
             <details className="mb-3 rounded-lg border border-tactical-cyan/40 bg-tactical-cyan/5 p-2">
               <summary className="cursor-pointer text-[0.6875rem] font-semibold text-tactical-cyan">
                 🛰️ 想在 App 內看到 Copernicus 那種海上衛星照？照這 5 步（免費、免再開帳號）
@@ -223,12 +228,12 @@ export function SettingsPanel() {
                 <ol className="flex list-decimal flex-col gap-1 pl-4 text-slate-400">
                   <li>用你的 <b className="text-slate-200">Copernicus 帳號</b>登入免費儀錶板：
                     <br/><span className="font-mono text-tactical-cyan">shapps.dataspace.copernicus.eu/dashboard</span></li>
-                  <li>進 <b className="text-slate-200">Configuration Utility</b> → <b>New configuration</b>（範本 <i>WMS/OGC</i>）。</li>
-                  <li>該 configuration 的 <b className="text-slate-200">Layers</b> 加兩個圖層，名稱務必打成：
-                    <br/>• <b className="text-tactical-cyan">TRUE-COLOR-S2L2A</b>（真彩光學，看船/海面）
-                    <br/>• <b className="text-tactical-cyan">SAR-VV</b>（Sentinel-1 雷達，穿雲/夜間看船）</li>
-                  <li>複製該 configuration 的 <b className="text-slate-200">Instance ID</b>（一串 UUID）。</li>
-                  <li>貼到上面欄位 → 儲存。回光學模式拉日期看「案發當時」的影像。</li>
+                  <li>左側 <b className="text-slate-200">Configuration Utility</b>：帳號本來就有一個
+                    <i> Simple WMS Instance</i> 可以直接用；或按 <b>New Configuration</b> 自己建一個。</li>
+                  <li>組態裡要有<b className="text-slate-200">真彩光學</b>和 <b className="text-slate-200">Sentinel-1 雷達</b>圖層。
+                    名字不用一字不差——App 會讀你的組態自己找，找不到會在下面告訴你缺哪個、怎麼加。</li>
+                  <li>複製該組態的 <b className="text-slate-200">Instance ID</b>（一串 UUID）。</li>
+                  <li>貼到上面欄位 → 儲存並套用。下面會出現檢查結果。</li>
                 </ol>
                 <p className="text-slate-500">
                   下方「WMS 位址」用「免費 CDSE」預設即可（見下方一鍵切換）。

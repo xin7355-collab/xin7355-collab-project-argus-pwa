@@ -4,6 +4,7 @@ import { useTacticalStore } from '../store/tacticalStore'
 import { buildBaseStyle, styleBackground, SENTINEL_BASES } from '../lib/baseLayers'
 import { BASE_STYLES } from '../lib/basemaps'
 import { isSentinelConfigured } from '../lib/config'
+import { layerFor } from '../lib/sentinel'
 
 /**
  * 底圖管理（純副作用，無按鈕；切換鈕是 BaseMapSwitcher）。
@@ -16,11 +17,15 @@ export function BaseLayerControl({ map }: { map: L.Map }) {
   // 金鑰改過就重建：以前要整頁重載才會生效，會把地圖位置與模式全洗掉。
   const configRev = useTacticalStore((s) => s.configRev)
   const setStatus = useTacticalStore((s) => s.setStatus)
+  // 組態檢查完才知道該掛哪個圖層（或組態裡根本沒有）
+  const sentinelCheck = useTacticalStore((s) => s.sentinelCheck)
 
   useEffect(() => {
     if (!SENTINEL_BASES.includes(baseLayer)) return
     if (!isSentinelConfigured()) {
       setStatus('⚠ 這個底圖需要先在 ⚙️ 設定填 Sentinel Instance ID；目前先用「地圖」代替')
+    } else if (!layerFor(baseLayer === 'sentinel1' ? 'sar' : 'optical')) {
+      setStatus(`⚠ ${sentinelCheck.message || '你的 Sentinel 組態裡沒有這種圖層'}　目前先用「地圖」代替`)
     } else {
       setStatus(
         baseLayer === 'sentinel1'
@@ -28,7 +33,7 @@ export function BaseLayerControl({ map }: { map: L.Map }) {
           : 'Sentinel-2 真彩底圖：近 120 天最新低雲影像；大船呈白色亮點。無當期影像時該格會空白',
       )
     }
-  }, [baseLayer, setStatus, configRev])
+  }, [baseLayer, setStatus, configRev, sentinelCheck])
 
   useEffect(() => {
     if (!map.getPane('basePane')) {
@@ -54,7 +59,7 @@ export function BaseLayerControl({ map }: { map: L.Map }) {
       for (const l of layers) map.removeLayer(l)
       if (wantSeamarks && !hadSeamarks) useTacticalStore.getState().setShowSeamark(false)
     }
-  }, [baseLayer, map, configRev])
+  }, [baseLayer, map, configRev, sentinelCheck])
 
   return null
 }

@@ -66,8 +66,27 @@ export function buildWmsConfig(opts: SentinelOptions): {
   return { url, params }
 }
 
-/** 預設的 WMS layer 名稱（可依你的 Sentinel Hub configuration 調整）。 */
+/** 預設的 WMS layer 名稱。使用者組態裡沒有時，由 sentinelLayers.ts 從現有圖層挑。 */
 export const LAYERS = {
   opticalTrueColor: 'TRUE-COLOR-S2L2A', // Sentinel-2 光學
   sarVV: 'SAR-VV', // Sentinel-1 雷達
 } as const
+
+// 讀過 GetCapabilities 後實際要用的圖層 ID。放模組層而不是 store：
+// baseLayers 這類純組圖層的函式也要用，不該為此依賴 React。
+let resolved: { sar?: string; optical?: string } = {}
+
+/** 設定實際圖層（null＝組態裡沒有，讓 layerFor 回 null）。 */
+export function setResolvedLayers(r: { sar: string | null; optical: string | null } | null): void {
+  resolved = r ? { sar: r.sar ?? '', optical: r.optical ?? '' } : {}
+}
+
+/**
+ * 該用哪個圖層 ID。還沒檢查過就用預設名字；檢查過、組態裡沒有就回 null
+ * （呼叫端要提示去加圖層，不要掛一層注定空白的 WMS）。
+ */
+export function layerFor(kind: 'sar' | 'optical'): string | null {
+  const r = resolved[kind]
+  if (r === undefined) return kind === 'sar' ? LAYERS.sarVV : LAYERS.opticalTrueColor
+  return r || null
+}

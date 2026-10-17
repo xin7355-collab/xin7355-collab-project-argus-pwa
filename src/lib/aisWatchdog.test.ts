@@ -7,9 +7,6 @@ import {
   initialWatchdogState,
   isAuthFailure,
   type WatchdogState,
-  nextQuickDeaths,
-  looksLikeBadKey,
-  QUICK_DEATH_MS,
 } from './aisWatchdog.ts'
 
 const st = (p: Partial<WatchdogState>): WatchdogState => ({ ...initialWatchdogState(), ...p })
@@ -92,26 +89,4 @@ test('分得出金鑰問題與傳輸問題——重試只對後者有用', () =>
   for (const s of ['connection reset', 'timeout', 'bounding box too large', '']) {
     assert.equal(isAuthFailure(s), false, `不該判為金鑰問題：${s}`)
   }
-})
-
-// ── 秒斷＝金鑰多半無效（aisstream 不給原因文字，實測） ──
-
-test('連上一秒就斷、沒收到資料，連續兩次 → 判定金鑰有問題', () => {
-  let n = 0
-  n = nextQuickDeaths(n, 1100, false)
-  assert.equal(looksLikeBadKey(n), false, '一次可能只是網路抖動')
-  n = nextQuickDeaths(n, 1300, false)
-  assert.equal(looksLikeBadKey(n), true)
-})
-
-test('收到過資料就不是金鑰問題，計數歸零', () => {
-  assert.equal(nextQuickDeaths(5, 800, true), 0)
-})
-
-test('活很久才斷是網路問題，不累計', () => {
-  assert.equal(nextQuickDeaths(1, QUICK_DEATH_MS + 1, false), 0)
-})
-
-test('根本沒連上（握手失敗）不算秒斷，也不歸零', () => {
-  assert.equal(nextQuickDeaths(1, null, false), 1)
 })
