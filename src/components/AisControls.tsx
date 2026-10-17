@@ -5,6 +5,8 @@ import { isSentinelConfigured } from '../lib/sentinel'
 import { analyzeVessels, analyzeApproach } from '../lib/aisAnomaly'
 import { ROUTE_NAME, type ConnAttempt } from '../lib/aisRoute'
 import { SentinelLayerStatus } from './SentinelLayerStatus'
+import { keyHint } from '../lib/keyText'
+import { getConfig } from '../lib/config'
 
 /** AIS 模式控制面板：船舶數、搜尋、異常警示、衛星船隻疊層（漁火／雷達）。 */
 export function AisControls() {
@@ -22,6 +24,7 @@ export function AisControls() {
   const aisDiag = useTacticalStore((s) => s.aisDiag)
   const keyTest = useTacticalStore((s) => s.aisKeyTest)
   const requestAisKeyTest = useTacticalStore((s) => s.requestAisKeyTest)
+  const hint = keyHint(getConfig().aisKey)
   const analyses = analyzeVessels(vessels)
   const flagged = analyses.filter((a) => a.level !== 'ok')
   // 🎯 趨近我方（需 GPS 定位）：會近距離通過的船，碰撞/接觸預警
@@ -200,6 +203,12 @@ export function AisControls() {
           </button>
           {keyTest.text && !keyTest.running && (
             <p className="text-[0.625rem] leading-relaxed text-slate-200">{keyTest.text}</p>
+          )}
+          {(aisDiag?.verdict === 'badKey' || keyTest.text.startsWith('❌')) && (
+            <p className={`text-[0.625rem] leading-relaxed ${hint.odd ? 'text-rose-300' : 'text-slate-400'}`}>
+              App 裡目前的金鑰：{hint.text}
+              {hint.odd ? '——裡面有不像金鑰的字元，多半貼錯了東西。' : '。跟 aisstream.io → API Keys 上的對一下，不一樣就重貼。'}
+            </p>
           )}
           {aisDiag && aisDiag.history.length > 0 && (
             <details className="text-[0.5625rem] text-slate-400">

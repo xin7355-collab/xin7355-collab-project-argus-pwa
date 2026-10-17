@@ -99,7 +99,8 @@ export function explainWmsError(text: string): { status: CheckStatus; message: s
       status: 'badId',
       message:
         `Copernicus 說這個 Instance ID 不存在（「${text}」）。到設定頁重新複製一次再貼上；` +
-        '也確認 ⚙️ 設定的 WMS 網址選的是「免費 CDSE」——用 Copernicus 帳號建的 ID 在商業版網址上會被當成不存在。',
+        '也確認 ⚙️ 設定的 WMS 網址選的是「免費 CDSE」——用 Copernicus 帳號建的 ID 在商業版網址上會被當成不存在。' +
+        '如果 ID 是從 insights.planet.com 拿的：那是 Planet 的商業試用（會到期），跟免費 CDSE 不通用。',
     }
   }
   if (/quota|rate limit|too many|processing units|exceeded/i.test(text)) {

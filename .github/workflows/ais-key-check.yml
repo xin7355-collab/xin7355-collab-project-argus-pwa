@@ -1,0 +1,22 @@
+# AIS 金鑰檢查（手動觸發）：從 GitHub 伺服器用 repo Secret 的 AISSTREAM_KEY
+# 分別測「直連／帶瀏覽器來源／經本站轉接」，分出金鑰壞、被擋還是台灣沒資料。
+# 紀錄只印數量與斷線碼，不印金鑰與船位（公開 repo 的紀錄是公開的）。
+name: 檢查 AIS 金鑰
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # 四項各聽 20 秒＋握手，實測不到 2 分鐘
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: npm i --no-save --no-package-lock ws@8.18.0
+      - run: node scripts/check-ais-key.mjs
+        env:
+          AISSTREAM_KEY: ${{ secrets.AISSTREAM_KEY }}

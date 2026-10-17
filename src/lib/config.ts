@@ -14,6 +14,8 @@ export interface RuntimeConfig {
   cwaKey: string
 }
 
+import { cleanKey } from './keyText'
+
 const LS_KEY = 'argus.config.v1'
 
 const ENV = {
@@ -46,10 +48,11 @@ function readLS(): Partial<RuntimeConfig> {
 export function getConfig(): RuntimeConfig {
   const ls = readLS()
   return {
-    sentinelInstanceId: ls.sentinelInstanceId?.trim() || ENV.sentinelInstanceId,
+    // 金鑰類一律清掉手機貼上多帶的隱形字元（見 keyText.ts）
+    sentinelInstanceId: cleanKey(ls.sentinelInstanceId) || ENV.sentinelInstanceId,
     sentinelWmsUrl: ls.sentinelWmsUrl?.trim() || ENV.sentinelWmsUrl,
     edgeAiUrl: normUrl(ls.edgeAiUrl || ENV.edgeAiUrl),
-    aisKey: ls.aisKey?.trim() || ENV.aisKey,
+    aisKey: cleanKey(ls.aisKey) || ENV.aisKey,
     cwaKey: ls.cwaKey?.trim() || ENV.cwaKey,
   }
 }
