@@ -1,5 +1,5 @@
 import type L from 'leaflet'
-import type { BaseLayerId } from './baseLayers'
+import type { BaseLayerId } from './basemaps.ts'
 import {
   buildEsriImagery,
   buildEsriOcean,
@@ -88,16 +88,17 @@ export function daysEarlier(date: string, n: number): string {
 //
 // 這兩套設定其實指向同一批衛星影像，卻分散在「圖層」面板與「沿岸光學」面板。
 // 分開設定會讓人以為「我明明選了衛星底圖，怎麼切到光學還是另一種影像」。
-// 有對應關係的就雙向連動；沒有對應的（暗色底圖、中文電子地圖、每日 VIIRS、
+// 有對應關係的就雙向連動；沒有對應的（地圖、海圖、夜間、每日 VIIRS、
 // 海底地形）各自保留，不互相干擾。
 
+// 「衛星」底圖的高解析層就是 Esri 空拍，跟光學模式的 esri 來源是同一批影像。
 const BASE_TO_OPTICAL: Partial<Record<BaseLayerId, OpticalSource>> = {
-  esri: 'esri',
+  hybrid: 'esri',
   satColor: 'eox',
 }
 
 const OPTICAL_TO_BASE: Partial<Record<OpticalSource, BaseLayerId>> = {
-  esri: 'esri',
+  esri: 'hybrid',
   eox: 'satColor',
 }
 

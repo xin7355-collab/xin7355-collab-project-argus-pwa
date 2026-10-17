@@ -125,16 +125,17 @@ export function LocateControl({ map }: { map: L.Map }) {
     if (!longPressed.current) locateOnce()
   }
 
-  // 我的位置為常駐快捷（與 ⚙️、🧰 同列），永遠顯示。
+  // 我的位置：右下角、底圖切換鈕下面，跟著抽屜高度移動，永遠不會被蓋住。
 
   return (
     <button
       onPointerDown={onPressStart}
       onPointerUp={onPressEnd}
       onPointerLeave={() => pressTimer.current && clearTimeout(pressTimer.current)}
-      className={`safe-float-top3 pointer-events-auto absolute z-[1100] flex h-11 w-11 items-center justify-center rounded-full border text-xl active:scale-95 ${
-        trackRecording ? 'border-red-500 bg-red-500/20' : 'border-slate-600 bg-tactical-panel/90'
+      className={`follow-sheet hide-when-sheet-tall pointer-events-auto absolute z-[1100] flex h-12 w-12 items-center justify-center rounded-2xl border text-xl shadow-lg active:scale-95 ${
+        trackRecording ? 'border-red-500 bg-red-500/20' : 'border-slate-600/80 bg-tactical-bg/95'
       }`}
+      style={{ right: 'calc(0.75rem + env(safe-area-inset-right))', bottom: 'calc(var(--sheet-h) + 1.75rem)' }}
       aria-label="我的位置（長按記錄航跡）"
       title="短按定位 · 長按記錄航跡"
     >

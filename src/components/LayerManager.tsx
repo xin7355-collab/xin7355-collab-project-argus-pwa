@@ -1,18 +1,5 @@
 import { useTacticalStore } from '../store/tacticalStore'
-import { BASE_LABELS, type BaseLayerId } from '../lib/baseLayers'
-
-const BASES: BaseLayerId[] = ['dark', 'nlsc', 'nlscPhoto', 'satColor', 'esri', 'sentinel2', 'sentinel1']
-
-/** 各底圖的「影像時效」說明——讓海上清楚知道看到的不是即時單日影像。 */
-const BASE_VINTAGE: Record<BaseLayerId, string> = {
-  dark: '向量地圖 · 無影像日期',
-  nlsc: '向量電子地圖 · 無影像',
-  nlscPhoto: '正射影像鑲嵌 · 非單一日期（定期更新）',
-  satColor: 'Sentinel-2 2023 無雲年度合成 · 非即時',
-  esri: '高解析空拍鑲嵌 · 免金鑰 · 非單一日期',
-  sentinel2: '近 120 天最新真彩 · 大船白亮點 · 需 Instance ID',
-  sentinel1: '近 30 天最新雷達 · 穿雲夜視看船 · 需 Instance ID',
-}
+import { BaseStylePicker } from './BaseStylePicker'
 
 /**
  * 統一圖層視窗（🗂️）：分類 + 打勾管理所有跨模式圖層。
@@ -20,8 +7,6 @@ const BASE_VINTAGE: Record<BaseLayerId, string> = {
  * 取代原本散落的 🗺️ 底圖鈕與領海鈕。
  */
 export function LayerManager() {
-  const baseLayer = useTacticalStore((s) => s.baseLayer)
-  const setBaseLayer = useTacticalStore((s) => s.setBaseLayer)
   const showTerritorial = useTacticalStore((s) => s.showTerritorial)
   const setShowTerritorial = useTacticalStore((s) => s.setShowTerritorial)
   const showWind = useTacticalStore((s) => s.showWind)
@@ -108,32 +93,13 @@ export function LayerManager() {
               </div>
             </div>
 
-            {/* 底圖（單選）*/}
+            {/* 底圖：跟地圖上的切換鈕是同一個元件 */}
             <div className="mb-3">
-              <div className="mb-1.5 text-[0.6875rem] font-semibold text-slate-400">🗺️ 底圖（擇一）</div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {BASES.map((id) => (
-                  <button
-                    key={id}
-                    onClick={() => setBaseLayer(id)}
-                    className={`flex flex-col gap-0.5 rounded-lg border px-2 py-2 text-left active:scale-95 ${
-                      baseLayer === id
-                        ? 'border-tactical-cyan bg-tactical-cyan/15 text-tactical-cyan'
-                        : 'border-slate-700 bg-slate-900/50 text-slate-300'
-                    }`}
-                  >
-                    <span className="text-[0.6875rem] font-semibold">
-                      {baseLayer === id ? '● ' : '○ '}
-                      {BASE_LABELS[id]}
-                    </span>
-                    <span className="text-[0.5625rem] leading-tight text-slate-400">{BASE_VINTAGE[id]}</span>
-                  </button>
-                ))}
-              </div>
+              <div className="mb-1.5 text-[0.6875rem] font-semibold text-slate-400">🗺️ 底圖</div>
+              <BaseStylePicker />
               <p className="mt-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 p-1.5 text-[0.625rem] leading-relaxed text-amber-200">
-                ⚠️ 四種底圖都是<b>固定合成圖／向量圖，不是即時、也非單一日期</b>——
-                <b>無法</b>用來判讀「某天海上有沒有那艘船」。要看<b>特定日期</b>的海上船隻，
-                請切「🌤️ 沿岸光學」模式：可選日期，且會顯示影像<b>實際拍攝日</b>（需先在 ⚙️ 設定填 Sentinel Instance ID）。
+                ⚠️ 底圖都是<b>鑲嵌圖或向量地圖，不是今天拍的</b>——不能拿來判斷「某天海上有沒有那艘船」。
+                要看特定日期，請用「🌤️ 沿岸光學」：可選日期，並顯示影像實際拍攝日（需 Sentinel 金鑰）。
               </p>
             </div>
 

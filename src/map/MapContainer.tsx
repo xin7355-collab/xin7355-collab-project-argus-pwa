@@ -3,6 +3,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { CompareLayer } from './CompareLayer'
 import { IssLayer } from './IssLayer'
+import { ScaleControl } from './ScaleControl'
 import { SatPassLayer } from './SatPassLayer'
 import { LayerControl } from './LayerControl'
 import { BaseLayerControl } from './BaseLayerControl'
@@ -59,6 +60,8 @@ export function MapContainer() {
     const m = L.map(elRef.current, {
       center: [24.5, 122.0], // 台灣東部海域
       zoom: 7,
+      // 底圖原生多半到 z19，再放大一層由 Leaflet 內插（看港內細節夠用）
+      maxZoom: 20,
       zoomControl: false,
       attributionControl: true,
       preferCanvas: true,
@@ -66,8 +69,14 @@ export function MapContainer() {
 
     // Base Layer 改由 <BaseLayerControl> 依 store.baseLayer 管理（可切中文底圖）。
 
-    // 手機以雙指縮放為主，移除佔版面的縮放按鈕；保留比例尺。
-    L.control.scale({ imperial: false, position: 'bottomright' }).addTo(m)
+    // 手機以雙指縮放為主，移除佔版面的縮放按鈕。比例尺見 <ScaleControl>（浬）。
+    // 版權字前綴的「Leaflet」連結不是授權要求（BSD），拿掉省一整段寬度——
+    // 不然好幾家圖資的版權字串在 iPhone 上會折成兩行，蓋住比例尺。
+    m.attributionControl.setPrefix(false)
+    // 版權字被截成一行時，點一下可以展開看完整內容
+    m.attributionControl.getContainer()?.addEventListener('click', (e) => {
+      ;(e.currentTarget as HTMLElement).classList.toggle('expanded')
+    })
 
     setMap(m)
     return () => {
@@ -83,6 +92,7 @@ export function MapContainer() {
       {map && <BaseLayerControl map={map} />}
       {map && <LayerControl map={map} />}
       {map && <CompareLayer map={map} />}
+      {map && <ScaleControl map={map} />}
       {map && <IssLayer map={map} />}
       {map && <SatPassLayer map={map} />}
       {map && <BBoxSelector map={map} />}

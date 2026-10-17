@@ -17,21 +17,24 @@ import {
 
 const W = 16
 
-function solid(r: number, g: number, b: number, a = 255): TileSample {
+/** 測試夾具一律用 Uint8ClampedArray，才能用 .set 畫字樣。 */
+type Sample = TileSample & { data: Uint8ClampedArray }
+
+function solid(r: number, g: number, b: number, a = 255): Sample {
   const data = new Uint8ClampedArray(W * W * 4)
   for (let i = 0; i < W * W; i++) data.set([r, g, b, a], i * 4)
   return { data, w: W, h: W }
 }
 
 /** 灰底中間一塊深灰字樣——Esri「Map data not yet available」的樣子。 */
-function esriPlaceholder(): TileSample {
+function esriPlaceholder(): Sample {
   const s = solid(208, 208, 208)
   for (let y = 6; y < 10; y++) for (let x = 3; x < 13; x++) s.data.set([110, 110, 110, 255], (y * W + x) * 4)
   return s
 }
 
 /** 有紋理的真圖（街道、海岸線…）。 */
-function real(seed = 1): TileSample {
+function real(seed = 1): Sample {
   const data = new Uint8ClampedArray(W * W * 4)
   let a = seed
   for (let i = 0; i < W * W; i++) {
@@ -43,7 +46,7 @@ function real(seed = 1): TileSample {
 }
 
 /** 單色但帶 JPEG 雜訊（±1）。 */
-function nearlySolid(r: number, g: number, b: number): TileSample {
+function nearlySolid(r: number, g: number, b: number): Sample {
   const s = solid(r, g, b)
   for (let i = 0; i < W * W; i += 7) s.data[i * 4] = r + ((i % 3) - 1)
   return s

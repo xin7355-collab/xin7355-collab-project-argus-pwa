@@ -1,29 +1,12 @@
 import L from 'leaflet'
 import { getConfig, isSentinelConfigured } from './config'
 import { LAYERS } from './sentinel'
+import { BASE_STYLES, DEFAULT_BASE, type BaseLayerId, type TileSpec } from './basemaps'
+import { classifyTile, shouldHide, type HideRule, type TileSample } from './tileFilter'
 
-// ── 底圖圖層 ────────────────────────────────────────────────
-//
-// dark：Esri World Dark Gray 戰術暗色（英文標註、全球、免金鑰）。
-//        原本用 CARTO，但它開始回傳「API KEY REQUIRED」浮水印圖磚。
-// nlsc：內政部國土測繪中心「通用版電子地圖」——繁體中文地名，官方免費，
-//        涵蓋台灣及周邊海域（遠洋無資料）。海上看得懂中文地名。
-// nlscPhoto：NLSC 正射影像＋中文注記（衛星底＋中文地名）。
-// esri：Esri World Imagery 高解析空拍（免金鑰）——沿岸/港口最銳利，可見大船。
-// sentinel2：Sentinel-2 真彩「近期最新」（需 Instance ID）——看某段期間海上大船。
-// sentinel1：Sentinel-1 SAR「近期最新」（需 Instance ID）——雷達，穿雲/夜間看船。
+export type { BaseLayerId } from './basemaps'
 
-export type BaseLayerId = 'dark' | 'nlsc' | 'nlscPhoto' | 'satColor' | 'esri' | 'sentinel2' | 'sentinel1'
-
-export const BASE_LABELS: Record<BaseLayerId, string> = {
-  dark: '戰術暗色（英文）',
-  nlsc: '中文電子地圖（NLSC）',
-  nlscPhoto: '中文衛星混合（NLSC）',
-  satColor: '彩色衛星（無雲 · 含外海 10m）',
-  esri: '高解析空拍（Esri · 免金鑰）',
-  sentinel2: 'Sentinel-2 真彩（近期 · 看船）',
-  sentinel1: 'Sentinel-1 雷達（近期 · 穿雲夜視看船）',
-}
+// ── 把 basemaps.ts 的樣式描述組成 Leaflet 圖層 ──────────────────
 
 /** 需要 Sentinel Instance ID 才能用的底圖。 */
 export const SENTINEL_BASES: BaseLayerId[] = ['sentinel2', 'sentinel1']
@@ -48,77 +31,82 @@ function sentinelBase(layer: string, opts: { days: number; maxcc?: number }): L.
     time: recentRange(opts.days),
   }
   if (typeof opts.maxcc === 'number') params.maxcc = opts.maxcc
-  return L.tileLayer.wms(url, { ...params, maxZoom: 18, attribution: '© Copernicus / Sentinel Hub' } as L.WMSOptions)
+  return L.tileLayer.wms(url, { ...params, maxZoom: 20, attribution: '© Copernicus / Sentinel Hub' } as L.WMSOptions)
 }
 
-export function buildBaseLayer(id: BaseLayerId): L.TileLayer {
-  if (id === 'satColor') {
-    // Sentinel-2 cloudless（EOX）：全球連續、無雲、含外海的 10m 彩色鑲嵌，
-    // 當「主底圖」讓 AIS 船位/雷達/漁火/漂流全疊在真實影像上。
-    // 選它的關鍵：不像 Esri 在外海/內陸偏遠處會出現白色「無資料」佔位塊——
-    // 這是全球完整鑲嵌，外海也有圖；超過原生 16 層時平滑放大（會糊不會白）。
-    const url =
-      'https://tiles.maps.eox.at/wmts?layer=s2cloudless-2023_3857&style=default' +
-      '&tilematrixset=GoogleMapsCompatible&Service=WMTS&Request=GetTile&Version=1.0.0' +
-      '&Format=image%2Fjpeg&TileMatrix={z}&TileCol={x}&TileRow={y}'
-    return L.tileLayer(url, {
-      maxNativeZoom: 16,
-      maxZoom: 20,
-      attribution: 'Sentinel-2 cloudless 2023 © EOX（含 Copernicus 資料）',
-    })
+// ── 假圖磚過濾 ──────────────────────────────────────────────
+//
+// 共用一張 16×16 的小畫布：把剛載入的圖磚縮小畫上去、讀回 256 個像素，
+// 交給 tileFilter 判斷。每張圖磚約 0.1 ms，一個畫面二三十張不到 5 ms。
+
+let sampler: CanvasRenderingContext2D | null | undefined
+const SAMPLE = 16
+
+function sampleTile(img: HTMLImageElement): TileSample | null {
+  if (sampler === undefined) {
+    const c = document.createElement('canvas')
+    c.width = SAMPLE
+    c.height = SAMPLE
+    // willReadFrequently：讓畫布留在 CPU，iPhone 上每次讀像素不用從 GPU 搬回來
+    sampler = c.getContext('2d', { willReadFrequently: true })
   }
-  if (id === 'esri') {
-    // Esri World Imagery：免金鑰高解析空拍，沿岸/港口最清楚（部分地區可見大船），
-    // 但屬「鑲嵌」（非單一日期）；遠洋偏遠處可能較糊。
-    return L.tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      { maxZoom: 20, maxNativeZoom: 19, attribution: 'Esri World Imagery' },
-    )
+  if (!sampler) return null
+  sampler.clearRect(0, 0, SAMPLE, SAMPLE)
+  sampler.drawImage(img, 0, 0, SAMPLE, SAMPLE)
+  // 伺服器若沒回 CORS 標頭，這行會丟 SecurityError——由呼叫端吞掉、保留圖磚
+  const d = sampler.getImageData(0, 0, SAMPLE, SAMPLE).data
+  return { data: d, w: SAMPLE, h: SAMPLE }
+}
+
+function attachHide(layer: L.TileLayer, rule: HideRule) {
+  layer.on('tileload', (e: L.TileEvent) => {
+    const img = e.tile as HTMLImageElement
+    try {
+      const s = sampleTile(img)
+      if (s && shouldHide(classifyTile(s), rule)) img.style.visibility = 'hidden'
+    } catch {
+      // 讀不到像素就不判斷——寧可多一張空白，也不要把真的地圖藏掉
+    }
+  })
+}
+
+function buildSpec(spec: TileSpec): L.TileLayer {
+  const layer = L.tileLayer(spec.url, {
+    maxNativeZoom: spec.maxNativeZoom,
+    maxZoom: spec.maxZoom ?? 20,
+    minZoom: spec.minZoom ?? 0,
+    bounds: spec.bounds ? L.latLngBounds(spec.bounds) : undefined,
+    opacity: spec.opacity ?? 1,
+    attribution: spec.attribution,
+    // 要讀像素才能判斷假圖磚。只對實測有 CORS 的主機開（basemaps.test.ts 有守門）——
+    // 對沒 CORS 的主機開這個，圖磚會整個載不出來。
+    crossOrigin: spec.hide ? 'anonymous' : undefined,
+    detectRetina: false,
+  })
+  if (spec.hide) attachHide(layer, spec.hide)
+  return layer
+}
+
+/**
+ * 組出某個底圖樣式的所有圖層（由下往上）。
+ * Sentinel 沒設金鑰時退回預設地圖——不然會整片空白，使用者以為 App 壞了。
+ */
+export function buildBaseStyle(id: BaseLayerId): L.TileLayer[] {
+  if (id === 'sentinel2' || id === 'sentinel1') {
+    if (!isSentinelConfigured()) return buildBaseStyle(DEFAULT_BASE)
+    return [
+      id === 'sentinel1'
+        ? sentinelBase(LAYERS.sarVV, { days: 30 })
+        : sentinelBase(LAYERS.opticalTrueColor, { days: 120, maxcc: 40 }),
+    ]
   }
-  if (id === 'sentinel2') {
-    // 近 120 天最新、低雲的 Sentinel-2 真彩（大船呈白色亮點/短條）
-    if (!isSentinelConfigured()) return buildBaseLayer('dark')
-    return sentinelBase(LAYERS.opticalTrueColor, { days: 120, maxcc: 40 })
+  return BASE_STYLES[id].layers.map(buildSpec)
+}
+
+/** 這個樣式實際會畫的背景色（Sentinel 沒金鑰時跟著退回的樣式走）。 */
+export function styleBackground(id: BaseLayerId): string {
+  if ((id === 'sentinel2' || id === 'sentinel1') && !isSentinelConfigured()) {
+    return BASE_STYLES[DEFAULT_BASE].background
   }
-  if (id === 'sentinel1') {
-    // 近 30 天最新 Sentinel-1 SAR（金屬船體＝亮點；穿雲、夜間可用）
-    if (!isSentinelConfigured()) return buildBaseLayer('dark')
-    return sentinelBase(LAYERS.sarVV, { days: 30 })
-  }
-  if (id === 'nlsc') {
-    return L.tileLayer('https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}', {
-      maxZoom: 20,
-      attribution: '© 內政部國土測繪中心 NLSC',
-      // NLSC 只涵蓋台灣周邊，遠洋無圖磚；底下墊深色避免全白。
-    })
-  }
-  if (id === 'nlscPhoto') {
-    return L.tileLayer(
-      'https://wmts.nlsc.gov.tw/wmts/PHOTO_MIX/default/GoogleMapsCompatible/{z}/{y}/{x}',
-      {
-        maxZoom: 20,
-        attribution: '© 內政部國土測繪中心 NLSC（正射影像＋中文注記）',
-      },
-    )
-  }
-  // dark（預設）：Esri 暗色底圖。
-  //
-  // 原本用 CARTO dark_all，但實際在使用者手機上回傳的是印著
-  // 「API KEY REQUIRED / carto.com/basemaps/apikey」的浮水印圖磚——
-  // 整張地圖被蓋掉。dark 是 BaseLayerControl 常駐的底層（讓遠處海面不是白的），
-  // 所以它壞掉等於每個模式底下都是壞的。
-  //
-  // 換成 Esri World Dark Gray：一樣免金鑰，而且本 App 已經在用同一個主機
-  // （高解析空拍、海底地形），使用者手機上實測是正常載入的，等於已知可用。
-  return L.tileLayer(
-    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-    {
-      // 原生到第 16 層，再放大由 Leaflet 內插（會糊不會白）
-      maxNativeZoom: 16,
-      maxZoom: 19,
-      detectRetina: false,
-      className: 'base-tiles-tactical',
-      attribution: 'Esri · HERE, Garmin, © OpenStreetMap contributors',
-    },
-  )
+  return BASE_STYLES[id].background
 }

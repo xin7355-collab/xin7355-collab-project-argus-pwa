@@ -33,7 +33,7 @@ export function MeasureControl() {
   return (
     <>
       {measuring && (
-        <div className="safe-top pointer-events-auto absolute left-1/2 top-0 z-[1100] mt-12 flex max-w-[95vw] -translate-x-1/2 flex-col gap-1 rounded-lg border border-tactical-cyan/50 bg-tactical-panel/95 px-3 py-2">
+        <div className="pointer-events-auto flex max-w-full flex-col gap-1 rounded-xl border border-tactical-cyan/50 bg-tactical-panel/95 px-3 py-2 shadow-lg">
           <div className="flex items-center gap-3">
             <div className="flex min-w-0 flex-col">
               <span className="font-mono text-sm font-bold text-tactical-cyan">

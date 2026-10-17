@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTacticalStore } from '../store/tacticalStore'
 import { isAisConfigured, isSentinelConfigured } from '../lib/config'
 import {
@@ -115,6 +115,17 @@ export function QuickScan() {
   }
 
   const running = phase === 'switching' || phase === 'loading' || phase === 'scanning'
+
+  // 觸發來源從浮動圓鈕搬到功能清單的「⚡ 一鍵掃描」（store 的計數器每 +1 跑一次）。
+  // 掛載時的初始值不算——不然每次重新整理頁面都會自己跑一次。
+  const quickScanTick = useTacticalStore((s) => s.quickScanTick)
+  const seenTick = useRef(quickScanTick)
+  useEffect(() => {
+    if (quickScanTick === seenTick.current) return
+    seenTick.current = quickScanTick
+    void run()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quickScanTick])
   const sevStyle =
     summary?.severity === 'alert'
       ? 'border-tactical-alert bg-tactical-alert/10 text-tactical-alert'
@@ -124,16 +135,6 @@ export function QuickScan() {
 
   return (
     <>
-      <button
-        onClick={run}
-        disabled={running}
-        className="safe-float-top5 pointer-events-auto absolute z-[1100] flex h-11 w-11 items-center justify-center rounded-full border border-tactical-cyan bg-tactical-cyan/20 text-lg active:scale-95 disabled:opacity-60"
-        aria-label="一鍵掃描：這片海現在有什麼"
-        title="這片海現在有什麼"
-      >
-        {running ? '⏳' : '⚡'}
-      </button>
-
       {(running || summary) && (
         <div className="pointer-events-auto fixed inset-0 z-[2000] flex items-end justify-center bg-black/60 p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:items-center">
           <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-700 bg-tactical-bg p-4">

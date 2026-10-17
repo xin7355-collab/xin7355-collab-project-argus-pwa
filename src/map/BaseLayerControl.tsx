@@ -1,27 +1,26 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import L from 'leaflet'
 import { useTacticalStore } from '../store/tacticalStore'
-import { buildBaseLayer, SENTINEL_BASES } from '../lib/baseLayers'
+import { buildBaseStyle, styleBackground, SENTINEL_BASES } from '../lib/baseLayers'
+import { BASE_STYLES } from '../lib/basemaps'
 import { isSentinelConfigured } from '../lib/config'
 
 /**
- * 底圖管理（純副作用，無按鈕）。底圖的「切換」已移到統一圖層視窗 🗂️。
- * 中文底圖用內政部國土測繪中心（NLSC），台灣周邊才有圖磚，故底下永遠墊
- * 一層深色 CARTO 當「遠洋/無資料」底，不會全白。
+ * 底圖管理（純副作用，無按鈕；切換鈕是 BaseMapSwitcher）。
+ *
+ * 一個樣式由好幾層疊成（見 lib/basemaps.ts），全部放在自己的 basePane，
+ * z 低於 tilePane，確保光學／雷達影像永遠疊在底圖之上。
  */
 export function BaseLayerControl({ map }: { map: L.Map }) {
   const baseLayer = useTacticalStore((s) => s.baseLayer)
   // 金鑰改過就重建：以前要整頁重載才會生效，會把地圖位置與模式全洗掉。
   const configRev = useTacticalStore((s) => s.configRev)
   const setStatus = useTacticalStore((s) => s.setStatus)
-  const underRef = useRef<L.TileLayer | null>(null)
-  const topRef = useRef<L.TileLayer | null>(null)
 
-  // Sentinel 近期影像底圖：提示「需 Instance ID」或「顯示近期最新影像」。
   useEffect(() => {
     if (!SENTINEL_BASES.includes(baseLayer)) return
     if (!isSentinelConfigured()) {
-      setStatus('⚠ 此底圖需先在 ⚙️ 設定填 Sentinel Instance ID；目前暫以深色底圖替代')
+      setStatus('⚠ 這個底圖需要先在 ⚙️ 設定填 Sentinel Instance ID；目前先用「地圖」代替')
     } else {
       setStatus(
         baseLayer === 'sentinel1'
@@ -31,40 +30,29 @@ export function BaseLayerControl({ map }: { map: L.Map }) {
     }
   }, [baseLayer, setStatus, configRev])
 
-  // 專屬底圖 pane（z 低於 tilePane，確保光學/雷達影像永遠疊在底圖之上）
   useEffect(() => {
     if (!map.getPane('basePane')) {
       map.createPane('basePane')
       const pane = map.getPane('basePane')
       if (pane) pane.style.zIndex = '150'
     }
-    const under = buildBaseLayer('dark')
-    under.options.pane = 'basePane'
-    under.addTo(map)
-    underRef.current = under
-    return () => {
-      map.removeLayer(under)
-      underRef.current = null
+    const layers = buildBaseStyle(baseLayer)
+    for (const l of layers) {
+      l.options.pane = 'basePane'
+      l.addTo(map)
     }
-  }, [map])
+    // 圖磚被藏掉或還沒載入時露出的顏色。跟海面同色，看起來就是海，不是破洞。
+    map.getContainer().style.background = styleBackground(baseLayer)
 
-  // 依選擇疊上中文/彩色底圖（dark 時不疊）
-  useEffect(() => {
-    if (topRef.current) {
-      map.removeLayer(topRef.current)
-      topRef.current = null
-    }
-    if (baseLayer !== 'dark') {
-      const top = buildBaseLayer(baseLayer)
-      top.options.pane = 'basePane'
-      top.addTo(map)
-      topRef.current = top
-    }
+    // 海圖樣式順便開航標；離開時還原成使用者原本的設定
+    const store = useTacticalStore.getState()
+    const wantSeamarks = BASE_STYLES[baseLayer].seamarks === true
+    const hadSeamarks = store.showSeamark
+    if (wantSeamarks && !hadSeamarks) store.setShowSeamark(true)
+
     return () => {
-      if (topRef.current) {
-        map.removeLayer(topRef.current)
-        topRef.current = null
-      }
+      for (const l of layers) map.removeLayer(l)
+      if (wantSeamarks && !hadSeamarks) useTacticalStore.getState().setShowSeamark(false)
     }
   }, [baseLayer, map, configRev])
 

@@ -66,7 +66,7 @@ export function AisLayer({ map }: { map: L.Map }) {
         group.clearLayers()
         for (const v of vessels) drawVessel(group, v, toTool)
       },
-      (s) => setStatus(s), // 連線狀態回報到狀態列
+      (s) => setStatus(s), // 連線狀態回報到狀態提示
       boxOf(),
       // 把「這份 AIS 現在可不可以信」送進 store，掃描才不會拿過期船位下結論。
       (usable, ageMs) => useTacticalStore.getState().setAisFresh(usable, ageMs),

@@ -10,7 +10,7 @@ export function RangeRingControl() {
   if (!rangeCenter) return null
 
   return (
-    <div className="safe-top pointer-events-auto absolute left-1/2 top-0 z-[1100] mt-12 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-sky-500/50 bg-tactical-panel/95 px-3 py-1.5">
+    <div className="pointer-events-auto flex items-center gap-2 rounded-xl border border-sky-500/50 bg-tactical-panel/95 px-3 py-1.5 shadow-lg">
       <span className="font-mono text-xs font-bold text-sky-300">◎ 距離圈</span>
       <button
         onClick={() => setRangeCenter(ownPosition ?? { lat: mapView.lat, lng: mapView.lng })}

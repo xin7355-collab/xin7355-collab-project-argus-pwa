@@ -56,6 +56,30 @@ export default defineConfig({
               cacheableResponse: { statuses: [0, 200] },
             },
           },
+          // 新的底圖（地圖／衛星／海圖）。海上常常沒訊號，看過的地方要留得住。
+          //
+          // 只快取 200，不收 0（opaque）：這幾層用 crossOrigin 載入（要讀像素判斷假圖磚），
+          // 萬一快取裡混進 opaque 回應，同一個網址的 <img crossorigin> 會直接載入失敗，
+          // 那張圖磚就永遠是破的、直到快取過期。
+          {
+            urlPattern:
+              /^https:\/\/server\.arcgisonline\.com\/ArcGIS\/rest\/services\/(World_Street_Map|World_Imagery|Reference|Ocean)\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'esri-tiles-v1',
+              expiration: { maxEntries: 3000, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/wmts\.nlsc\.gov\.tw\/wmts\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'nlsc-tiles-v1',
+              expiration: { maxEntries: 3000, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
         ],
       },
     }),

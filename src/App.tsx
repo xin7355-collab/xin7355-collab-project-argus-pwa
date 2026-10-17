@@ -1,7 +1,9 @@
 import { useEffect } from 'react'
 import { MapContainer } from './map/MapContainer'
 import { Dashboard } from './components/Dashboard'
-import { StatusBar } from './components/StatusBar'
+import { SearchBar } from './components/SearchBar'
+import { Toast } from './components/Toast'
+import { BaseMapSwitcher } from './components/BaseMapSwitcher'
 import { SettingsPanel } from './components/SettingsPanel'
 import { CoordManager } from './components/CoordManager'
 import { MeasureControl } from './components/MeasureControl'
@@ -18,7 +20,6 @@ import { InterceptPanel } from './components/InterceptPanel'
 import { DrPanel } from './components/DrPanel'
 import { SecureUnlock } from './components/SecureUnlock'
 import { QuickScan } from './components/QuickScan'
-import { ToolLauncher } from './components/ToolLauncher'
 import { SituationOverview } from './components/SituationOverview'
 import { applyUiScale } from './lib/uiScale'
 import { useTacticalStore } from './store/tacticalStore'
@@ -33,15 +34,23 @@ export default function App() {
   return (
     <div className="relative h-full w-full overflow-hidden bg-tactical-bg text-slate-200">
       <MapContainer />
-      <StatusBar />
+      <SearchBar />
       <SituationOverview />
       <SettingsPanel />
       <QuickScan />
-      <ToolLauncher />
+      <BaseMapSwitcher />
+      {/* 抽屜正上方的一欄：進行中的工具（量距離、距離圈、攔截）＋狀態提示。
+          放在一個欄裡由下往上疊，彼此不會重疊；靠近拇指，比放頂端好按。 */}
+      <div
+        className="follow-sheet hide-when-sheet-tall pointer-events-none absolute left-3 right-[4.5rem] z-[1100] flex flex-col items-start gap-1.5 md:right-auto md:w-[26rem]"
+        style={{ bottom: 'calc(var(--sheet-h) + 0.75rem)' }}
+      >
+        <MeasureControl />
+        <RangeRingControl />
+        <InterceptControl />
+        <Toast />
+      </div>
       <CoordManager />
-      <MeasureControl />
-      <RangeRingControl />
-      <InterceptControl />
       <LayerManager />
       <FieldOpsPanel />
       <NightOpsPanel />

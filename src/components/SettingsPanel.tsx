@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   getConfig,
   saveConfig,
@@ -21,8 +21,14 @@ import { useTacticalStore } from '../store/tacticalStore'
  * 等於填個金鑰就要重新找一次自己在哪。
  */
 export function SettingsPanel() {
-  const [open, setOpen] = useState(false)
+  // 開關放 store：搜尋列的 ⚙️ 與功能清單的「設定」都要能開它
+  const open = useTacticalStore((s) => s.settingsOpen)
+  const setOpen = useTacticalStore((s) => s.setSettingsOpen)
   const [cfg, setCfg] = useState(getConfig())
+  // 每次打開都讀最新設定（其他地方可能改過）
+  useEffect(() => {
+    if (open) setCfg(getConfig())
+  }, [open])
   const secureHasLock = useTacticalStore((s) => s.secureHasLock)
   const setSecureHasLock = useTacticalStore((s) => s.setSecureHasLock)
   const uiScale = useTacticalStore((s) => s.uiScale)
@@ -58,7 +64,7 @@ export function SettingsPanel() {
     setSecureUnlocked(true) // 設好先解鎖，方便你當下使用
     setPin1('')
     setPin2('')
-    alert('機敏 PIN 已設定。雷達等機敏功能現在起需 PIN 才叫得出來；重開 App 會自動鎖回。\n解鎖手勢：狀態列「版本號」連點 5 下。')
+    alert('機敏 PIN 已設定。雷達等機敏功能現在起需 PIN 才叫得出來；重開 App 會自動鎖回。\n解鎖手勢：功能清單最下面的「版本號」連點 5 下。')
   }
   const removePin = () => {
     if (!confirm('確定移除機敏鎖？移除後雷達功能會恢復成一般顯示。')) return
@@ -101,18 +107,6 @@ export function SettingsPanel() {
 
   return (
     <>
-      {/* 齒輪按鈕 */}
-      <button
-        onClick={() => {
-          setCfg(getConfig())
-          setOpen(true)
-        }}
-        className="safe-float-top pointer-events-auto absolute z-[1100] flex h-11 w-11 items-center justify-center rounded-full border border-slate-600 bg-tactical-panel/90 text-lg active:scale-95"
-        aria-label="設定"
-      >
-        ⚙️
-      </button>
-
       {!open ? null : (
         <div className="pointer-events-auto fixed inset-0 z-[2000] flex items-end justify-center bg-black/60 p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:items-center">
           <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-700 bg-tactical-bg p-4">
@@ -314,7 +308,7 @@ export function SettingsPanel() {
               <div className="mb-1 text-[0.6875rem] font-semibold text-rose-300">🔒 機敏功能鎖（雷達等）</div>
               <p className="mb-2 text-[0.625rem] leading-relaxed text-slate-400">
                 設一組只有你知道的 PIN，<b>雷達功能就會預設完全隱藏</b>（別人進 App 也看不到、沒有按鈕）。
-                解鎖手勢：狀態列右邊<b>「版本號」連點 5 下</b>→ 輸入 PIN。<b>重開 App 自動鎖回。</b>
+                解鎖手勢：把下方功能清單拉到最底，<b>「版本號」連點 5 下</b>→ 輸入 PIN。<b>重開 App 自動鎖回。</b>
                 <br />資料仍只存本機；此為前端遮蔽（擋肩窺/借手機/同仁誤觸），非軍規加密。
               </p>
               {!secureHasLock ? (
@@ -375,7 +369,7 @@ export function SettingsPanel() {
                     </button>
                   )}
                   <p className="text-[0.5625rem] leading-relaxed text-slate-500">
-                    也可用隱藏手勢：狀態列「版本號 v{'…'}」連點 5 下。解鎖只在本次使用，重開 App 自動鎖回。
+                    也可用隱藏手勢：功能清單最下面的「版本號 v{'…'}」連點 5 下。解鎖只在本次使用，重開 App 自動鎖回。
                   </p>
                 </div>
               )}

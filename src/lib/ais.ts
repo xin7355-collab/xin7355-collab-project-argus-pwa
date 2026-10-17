@@ -278,7 +278,7 @@ function subscribeReal(
   heartbeat = setInterval(() => {
     const v = evaluateWatchdog(wd, mono())
     onFresh?.(v.usable, v.ageMs)
-    // 只在狀態「改變」時出聲，不要每 20 秒洗一次狀態列。
+    // 只在狀態「改變」時出聲，不要每 20 秒跳一次提示。
     if (v.health !== lastHealth) {
       lastHealth = v.health
       if (v.message) status(v.message)

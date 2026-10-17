@@ -9,7 +9,7 @@ export function InterceptControl() {
   if (!sol) return null
 
   return (
-    <div className="safe-top pointer-events-auto absolute left-1/2 top-0 z-[1100] mt-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-amber-500/50 bg-tactical-panel/95 px-3 py-1.5">
+    <div className="pointer-events-auto flex items-center gap-2 rounded-xl border border-amber-500/50 bg-tactical-panel/95 px-3 py-1.5 shadow-lg">
       <span className="font-mono text-xs font-bold text-amber-300">🎯 攔截</span>
       <button
         onClick={() => setOpenTool('intercept')}

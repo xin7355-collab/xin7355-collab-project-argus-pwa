@@ -38,7 +38,7 @@ export function TyphoonLayer({ map }: { map: L.Map }) {
     // 'unreachable'=連線/授權失敗。用來在 GDACS 分支如實說明原因。
     let cwaState: 'none' | 'no-warning' | 'unreachable' = 'none'
 
-    // 只設狀態列與 store；實際繪圖交給下方「依選定颱風重畫」的 effect。
+    // 只設狀態提示與 store；實際繪圖交給下方「依選定颱風重畫」的 effect。
     const render = (tys: Typhoon[], source: 'cwa' | 'gdacs' | 'demo', demoReason?: 'none' | 'offline') => {
       if (cancelled || !tys.length) return
       const primary = tys[0]

@@ -9,7 +9,7 @@ import {
 
 /**
  * 領海基線 / 領海(12浬) / 鄰接區(24浬) 參考覆蓋層。
- * 跨模式顯示（態勢感知），由右上角按鈕切換。示意用途，非法律劃界。
+ * 跨模式顯示（態勢感知），由 🗂️ 圖層切換。示意用途，非法律劃界。
  */
 export function TerritorialLayer({ map }: { map: L.Map }) {
   const show = useTacticalStore((s) => s.showTerritorial)

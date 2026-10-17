@@ -9,8 +9,9 @@ import { baseForOptical, daysEarlier, opticalForBase } from '../lib/imagerySourc
 import type { Detection } from '../lib/detection'
 import type { IssFix } from '../lib/issTrack'
 import type { SatPassOverlay } from '../lib/passPlan'
+import type { Snap } from '../lib/sheet'
 import type { Typhoon } from '../lib/typhoon'
-import type { BaseLayerId } from '../lib/baseLayers'
+import { resolveStoredBase, type BaseLayerId } from '../lib/basemaps'
 import type { TideEvent, SeaAreaForecast } from '../lib/cwaMarine'
 import type { CwaAlert } from '../lib/cwaAlerts'
 import {
@@ -95,6 +96,13 @@ interface TacticalState {
   issFix: IssFix | null
   /** 最近一段航跡（新的在後面）。 */
   issTrail: { lat: number; lng: number; at: number }[]
+
+  /** 設定視窗開著沒（以前是設定元件自己的 state，現在搜尋列與功能清單都要能開它）。 */
+  settingsOpen: boolean
+  /** 每次 +1 就跑一次一鍵掃描（按鈕從浮動圓鈕搬進功能清單，觸發改走 store）。 */
+  quickScanTick: number
+  /** 底部抽屜停在哪一段。 */
+  sheetSnap: Snap
 
   /**
    * 使用者點選要在地圖上看的那一趟衛星過境。
@@ -195,7 +203,7 @@ interface TacticalState {
   // ── 底圖選擇（戰術暗色 / 中文電子地圖 / 中文衛星混合）──
   baseLayer: BaseLayerId
 
-  /** 目前開啟的工具面板 id（由工具總表啟動；null=全部關閉）。 */
+  /** 目前開啟的工具面板 id（由功能清單啟動；null=全部關閉）。 */
   openTool: string | null
   /** 介面字體大小倍率（0.9/1.0/1.15/1.3）；改根 font-size 讓全站等比縮放。 */
   uiScale: number
@@ -345,7 +353,7 @@ interface TacticalState {
   /** 自船航跡點（搜索覆蓋麵包屑）。 */
   ownTrack: { lat: number; lng: number }[]
 
-  // ── 狀態列訊息（給海上人員的即時回饋）───────────────
+  // ── 狀態提示（給海上人員的即時回饋，畫面上幾秒後自動收起）──
   statusMessage: string
 
   // ── actions ─────────────────────────────────────────
@@ -360,6 +368,9 @@ interface TacticalState {
   setIssFix: (f: IssFix, maxTrail: number) => void
   /** 選一趟過境畫到地圖上；再點一次同一趟（或傳 null）就收起來。 */
   setSatPass: (p: SatPassOverlay | null) => void
+  setSettingsOpen: (v: boolean) => void
+  requestQuickScan: () => void
+  setSheetSnap: (s: Snap) => void
   setOpticalRadar: (v: boolean) => void
   bumpScan: () => void
   setScanSensitivity: (v: number) => void
@@ -513,7 +524,8 @@ interface TacticalState {
 const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
 
 export const useTacticalStore = create<TacticalState>((set, get) => ({
-  mode: 'orbit',
+  // 打開就是乾淨的地圖。以前直接進「衛星過境」並把面板拉到一半，第一眼全是字。
+  mode: 'basic',
   maxCloudCover: 100,
   observationDate: today,
   opticalSource: 'esri',
@@ -523,6 +535,9 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   issFix: null,
   issTrail: [],
   satPass: null,
+  settingsOpen: false,
+  quickScanTick: 0,
+  sheetSnap: 'peek',
   opticalRadar: false,
   scanTick: 0,
   scanSensitivity: 3,
@@ -582,15 +597,14 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   trackRecording: false,
   ownTrack: [],
   baseLayer: ((): BaseLayerId => {
-    const v = (() => {
+    const read = (k: string) => {
       try {
-        return localStorage.getItem('argus.baseLayer.v1')
+        return localStorage.getItem(k)
       } catch {
         return null
       }
-    })()
-    const valid: BaseLayerId[] = ['dark', 'nlsc', 'nlscPhoto', 'satColor', 'esri', 'sentinel2', 'sentinel1']
-    return valid.includes(v as BaseLayerId) ? (v as BaseLayerId) : 'dark'
+    }
+    return resolveStoredBase(read(BASE_KEY), read(BASE_KEY_LEGACY))
   })(),
   openTool: null,
   uiScale: loadUiScale(),
@@ -637,7 +651,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   secureHasLock: isSecureLockSet(),
   secureUnlocked: false,
   securePromptOpen: false,
-  statusMessage: '軌道預警模式待命中',
+  statusMessage: '',
 
   setMode: (mode) =>
     set(() => ({
@@ -703,7 +717,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
     const base = baseForOptical(s)
     if (base) {
       try {
-        localStorage.setItem('argus.baseLayer.v1', base)
+        localStorage.setItem(BASE_KEY, base)
       } catch {
         /* ignore */
       }
@@ -714,6 +728,9 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   bumpConfigRev: () => set({ configRev: get().configRev + 1 }),
   setShowIss: (v) => set({ showIss: v, ...(v ? {} : { issFix: null, issTrail: [] }) }),
   setSatPass: (p) => set({ satPass: p }),
+  setSettingsOpen: (v) => set({ settingsOpen: v }),
+  requestQuickScan: () => set((st) => ({ quickScanTick: st.quickScanTick + 1 })),
+  setSheetSnap: (v) => set({ sheetSnap: v }),
   setIssFix: (f, maxTrail) => {
     const trail = [...get().issTrail, { lat: f.lat, lng: f.lng, at: f.at }]
     // 跨換日線時經度會從 +180 跳到 -180，直接連起來會在地圖上拉一條橫貫全圖的
@@ -827,7 +844,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   setMwPath: (v) => set({ mwPath: v }),
   setBaseLayer: (id) => {
     try {
-      localStorage.setItem('argus.baseLayer.v1', id)
+      localStorage.setItem(BASE_KEY, id)
     } catch {
       /* ignore */
     }
@@ -1073,14 +1090,21 @@ function defaultLabel(n: number): string {
   return `座標 ${n}`
 }
 
+// 底圖的儲存鍵。改版（v2）換了一批樣式 id，舊鍵只在第一次開啟時讀來轉換，
+// 見 lib/basemaps.ts 的 resolveStoredBase。
+const BASE_KEY = 'argus.baseLayer.v2'
+const BASE_KEY_LEGACY = 'argus.baseLayer.v1'
+
+// 切模式時跳出的提示。模式名稱已經在抽屜標題列上了，這裡只講「下一步要做什麼」；
+// 沒有下一步的就不出聲——每切一次就跳一行重複標題的字，只是噪音。
 const MODE_HINT: Record<TacticalMode, string> = {
-  basic: '基本地圖：無疊層（點下方模式啟動；再點一下同一個即關閉回此畫面）',
-  orbit: '軌道預警模式：衛星過境預報',
-  sar: '雷達盲搜模式：框選海域以啟動 AI 辨識',
-  optical: '沿岸光學模式：Sentinel-2 光學影像',
-  ais: 'AIS 船舶識別模式：即時船位載入中',
-  rescue: '搜救推演模式：點地圖標記落海點，計算漂流',
-  seastate: '海況熱力圖模式：載入海溫/浪高分佈',
-  envanim: '環境時間動畫：播放風場/洋流隨時間變化',
-  typhoon: '颱風路徑：顯示颱風位置/暴風圈/預報路徑',
+  basic: '',
+  orbit: '',
+  sar: '在地圖上框選一塊海域，開始 AI 辨識',
+  optical: '',
+  ais: '',
+  rescue: '點地圖標記落海點，開始計算漂流',
+  seastate: '',
+  envanim: '',
+  typhoon: '',
 }

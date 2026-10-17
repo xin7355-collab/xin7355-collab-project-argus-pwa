@@ -72,6 +72,9 @@
     回傳 `null` 的純副作用元件
   - `src/map/LayerControl.tsx` — 重度影像圖層的唯一擁有者（「同時只掛一層」原則，
     例外：`CompareLayer` 開啟時由它接管）
+  - `src/components/Dashboard.tsx` + `BottomSheet.tsx` + `Launcher.tsx` — 底部抽屜；
+    所有模式與工具的入口集中在 `src/lib/launcher.ts`（新增功能要在這裡登記，測試會檢查）
+  - `src/lib/basemaps.ts` — 底圖樣式（地圖／衛星／海圖／夜間…），由幾家免金鑰圖磚疊成
   - `src/lib/` — 60 個純函式模組（RF 傳播、雷達方程、地形剖面、漂流、亮點偵測…）
 - **測試**：`npm test` 用 Node 內建 test runner（`node --experimental-strip-types --test`），
   **零測試框架相依**。`node:test` 的型別在 `src/types/nodeTest.d.ts` 自己宣告——
@@ -92,7 +95,9 @@
   Worker 沒有 Git 整合，所以一定要靠 `.github/workflows/deploy.yml` 推上去。
 - **特別注意**：
   - **使用者只有 iPhone、沒有電腦**，回覆一律繁體中文。改完 UI 要想「手機上按不按得到」——
-    手機版 Dashboard 面板從畫面約 37% 處升起（z-index 1000），會蓋住地圖下半部。
+    底部是可拖曳抽屜（`BottomSheet`，z-index 1000）：收起約 104px、一半約 46%、全開到搜尋列下。
+    目前高度在 CSS 變數 `--sheet-h`；浮動按鈕用 `follow-sheet` 跟著它走，抽屜拉高時
+    （`html.sheet-tall`）`hide-when-sheet-tall` 的會藏起來。頂端是搜尋列，下面用 `below-search` 排。
   - **看不到的部分要說「沒驗到」，不要猜。** 這個沙箱擋掉大部分對外網路
     （open-meteo、overpass、wheretheiss 等 CONNECT 403），所以外部 API 的實際回傳
     多半驗不到，要用攔截/假資料驗，並誠實標註。
@@ -101,3 +106,7 @@
     不要數 SVG path。Leaflet 的 `.leaflet-tile-container` 是 `pointer-events: none`，
     `elementFromPoint` 命中測試會跳過圖磚。
   - 第三方圖磚來源會變（CARTO 已出現 API KEY REQUIRED 浮水印），不要只依賴單一供應商。
+    免費圖磚在「沒資料」的地方**不回 404，而是回 200 加一張假圖**（Esri 灰底「Map data not yet
+    available」、國土測繪中心整片淺藍），`src/lib/tileFilter.ts` 會讀像素認出來藏掉。
+    各家從第幾層開始沒資料都是實測的（`src/lib/basemaps.ts` 檔頭），改 maxNativeZoom 前先重測；
+    沙箱連不到圖磚主機，用 GitHub Actions 跑探測腳本，只用公開地標座標、不讀任何 secret。

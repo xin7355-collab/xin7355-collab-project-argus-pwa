@@ -40,15 +40,10 @@ export function OverpassControls() {
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-slate-700 bg-tactical-panel/90 p-3">
-      <div className="flex items-center gap-2">
-        <span className="text-2xl">🛰️</span>
-        <div className="flex flex-col">
-          <span className="text-base font-bold text-tactical-cyan">衛星過境預報</span>
-          <span className="text-[0.6875rem] text-slate-400">
-            幾點有新衛星影像可看 · 以畫面中心 {mapView.lat.toFixed(2)},{mapView.lng.toFixed(2)} 近似
-          </span>
-        </div>
-      </div>
+      {/* 模式名稱已經在抽屜標題列上，這裡只留「以哪裡為準」 */}
+      <span className="text-[0.6875rem] text-slate-400">
+        以畫面中心 {mapView.lat.toFixed(2)}, {mapView.lng.toFixed(2)} 為準
+      </span>
 
       {/* ISS 即時星下點：真的會動的那顆 */}
       <div className="rounded-lg border border-tactical-cyan/40 bg-tactical-cyan/5 p-2">

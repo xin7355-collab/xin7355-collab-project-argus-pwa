@@ -5,7 +5,7 @@ import { isSentinelConfigured } from '../lib/sentinel'
 
 /**
  * 畫面資訊條：即時顯示「畫面中心座標」，以及（光學模式）目前影像的時間注記，
- * 讓回放歷史影像時清楚知道「這張是哪時候的」。位於狀態列下方左側。
+ * 讓回放歷史影像時清楚知道「這張是哪時候的」。位於搜尋列下方左側。
  */
 export function MapInfoBar({ map }: { map: L.Map }) {
   const mode = useTacticalStore((s) => s.mode)
@@ -51,7 +51,7 @@ export function MapInfoBar({ map }: { map: L.Map }) {
     else imgTime = '📅 高解析空拍鑲嵌（Esri · 非即時、非單一日期）'
   }
 
-  // AIS 船位新不新，要常駐顯示而不是只丟一行狀態訊息——狀態列會被後面的
+  // AIS 船位新不新，要常駐顯示而不是只丟一行狀態提示——提示幾秒就收起、也會被後面的
   // 訊息蓋掉，但「這些船位是幾小時前的」是看地圖時隨時都要知道的事。
   // 實測確認過：AIS 連線可能握手成功後就沉默，船位會一直停在舊位置。
   let aisAge = ''

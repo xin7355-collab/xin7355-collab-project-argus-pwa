@@ -62,11 +62,11 @@ export function SituationOverview() {
   }
 
   return (
-    <div className="safe-top pointer-events-auto absolute left-1/2 top-0 z-[1150] mt-9 flex w-[min(92vw,26rem)] -translate-x-1/2 flex-col items-center">
+    <div className="below-search pointer-events-none absolute right-3 z-[1140] flex w-[min(92vw,26rem)] flex-col items-end">
       {/* 收合藥丸：總數 + 高/中風險配色 */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[0.6875rem] font-bold active:scale-95 ${
+        className={`pointer-events-auto flex items-center gap-2 rounded-full border px-3 py-1.5 text-[0.6875rem] font-bold active:scale-95 ${
           high
             ? 'border-rose-500/70 bg-rose-500/20 text-rose-100'
             : 'border-amber-500/70 bg-amber-500/20 text-amber-100'
@@ -84,7 +84,7 @@ export function SituationOverview() {
 
       {/* 展開清單：三段分組 */}
       {open && (
-        <div className="mt-1 max-h-[62vh] w-full overflow-y-auto rounded-xl border border-slate-700 bg-tactical-bg/95 p-2 shadow-lg">
+        <div className="pointer-events-auto mt-1 max-h-[62vh] w-full overflow-y-auto rounded-xl border border-slate-700 bg-tactical-bg/95 p-2 shadow-lg">
           <div className="mb-1 flex items-center justify-between">
             <span className="text-[0.6875rem] font-semibold text-tactical-cyan">🚨 即時狀況總覽</span>
             <button onClick={() => setOpen(false)} className="text-slate-400 active:scale-95">✕</button>

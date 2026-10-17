@@ -3,7 +3,7 @@ import { useTacticalStore } from '../store/tacticalStore'
 import { verifySecurePin } from '../lib/secure'
 
 /**
- * 機敏功能解鎖視窗：由不明顯手勢（狀態列版本號連點 5 下）觸發。
+ * 機敏功能解鎖視窗：由不明顯手勢（功能清單最下面的版本號連點 5 下）觸發。
  * 輸入正確 PIN → 本階段解鎖機敏功能（雷達等）；重開自動鎖回。
  */
 export function SecureUnlock() {
