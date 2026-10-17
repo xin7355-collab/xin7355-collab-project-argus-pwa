@@ -1,25 +1,22 @@
-// 暫時性：沙箱連不到 CDSE 文件站，借 Actions 讀官方說明，抓出設定頁的按鈕與圖層名稱。不讀任何 secret。
+// 暫時性：沙箱連不到 CDSE 文件站，借 Actions 讀官方說明全文段落。不讀任何 secret。
 const PAGES = [
-  'https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/Dashboard.html',
-  'https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/OGC.html',
-  'https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/Overview.html',
-  'https://documentation.dataspace.copernicus.eu/Applications/QGIS.html',
-  'https://knowledgebase.code-de.org/en/latest/cloud/Sentinel-Hub-Configuration-Utility-Overview-CODE-DE.html',
+  ['https://documentation.dataspace.copernicus.eu/Applications/QGIS.html', /Configuration Utility|New Layer|New Configuration|Based on|template/i],
+  ['https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/OGC.html', /instance|GetCapabilities|layer/i],
+  ['https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/Data/S1GRD.html', /decibel|VV|evalscript|visualiz|dataset|type/i],
 ]
-const KW = /configuration|template|layer|dashboard|shapps|instance|sentinel-1|grd|vv|data source|add new|predefined|save/i
-for (const u of PAGES) {
+const strip = (html) =>
+  html
+    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<(br|p|li|h\d|div|tr|pre)[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+for (const [u, kw] of PAGES) {
   try {
     const r = await fetch(u)
-    const html = await r.text()
-    const text = html
-      .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, '')
-      .replace(/<(br|p|li|h\d|div|tr)[^>]*>/gi, '\n')
-      .replace(/<[^>]+>/g, '')
-      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    const hrefs = [...html.matchAll(/href="(https?:\/\/[^"]*(shapps|dashboard)[^"]*)"/gi)].map((m) => m[1])
+    const text = strip(await r.text())
     console.log(`\n######## ${u} HTTP ${r.status}`)
-    console.log('連結：', [...new Set(hrefs)].join(' '))
-    for (const line of text.split('\n').map((s) => s.trim()).filter((s) => s.length > 3 && KW.test(s))) console.log('  ' + line.slice(0, 300))
+    const lines = text.split('\n').map((s) => s.trim()).filter((s) => s.length > 3)
+    lines.forEach((l, i) => { if (kw.test(l)) console.log(`[${i}] ${l.slice(0, 1500)}`) })
   } catch (e) {
     console.log(`######## ${u} 失敗 ${e}`)
   }
