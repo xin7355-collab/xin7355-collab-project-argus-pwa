@@ -10,6 +10,7 @@ export function AisControls() {
   const showBoatLights = useTacticalStore((s) => s.showBoatLights)
   const setShowBoatLights = useTacticalStore((s) => s.setShowBoatLights)
   const showRadarVessels = useTacticalStore((s) => s.showRadarVessels)
+  const setSettingsOpen = useTacticalStore((s) => s.setSettingsOpen)
   const setShowRadarVessels = useTacticalStore((s) => s.setShowRadarVessels)
   const gotoCoord = useTacticalStore((s) => s.gotoCoord)
   const fitPoints = useTacticalStore((s) => s.fitPoints)
@@ -196,12 +197,19 @@ export function AisControls() {
         </p>
 
         <button
-          onClick={() => setShowRadarVessels(!showRadarVessels)}
-          disabled={!isSentinelConfigured()}
+          onClick={() => {
+            // 沒金鑰時以前是灰掉不能按，看起來就像「壞了」。改成按了直接帶去設定。
+            if (!isSentinelConfigured()) {
+              setStatus('雷達暗船需要 Sentinel Instance ID（免費）。已打開設定，填好按「儲存並套用」就能用。')
+              setSettingsOpen(true)
+              return
+            }
+            setShowRadarVessels(!showRadarVessels)
+          }}
           className={[
             'flex items-center justify-between rounded border px-2.5 py-2 text-left text-[0.6875rem] font-semibold transition-all active:scale-95',
             !isSentinelConfigured()
-              ? 'cursor-not-allowed border-slate-700 bg-slate-900/40 text-slate-600'
+              ? 'border-amber-500/50 bg-amber-500/5 text-amber-200'
               : showRadarVessels
                 ? 'border-tactical-cyan bg-tactical-cyan/15 text-tactical-cyan'
                 : 'border-slate-600 bg-slate-900/60 text-slate-300',
@@ -209,7 +217,7 @@ export function AisControls() {
         >
           <span>📡 雷達暗船（Sentinel-1）</span>
           <span className="font-mono">
-            {!isSentinelConfigured() ? '需金鑰' : showRadarVessels ? '開' : '關'}
+            {!isSentinelConfigured() ? '去設定 ›' : showRadarVessels ? '開' : '關'}
           </span>
         </button>
         <p className="px-0.5 text-[0.625rem] leading-relaxed text-slate-500">
@@ -222,9 +230,13 @@ export function AisControls() {
         點船隻可看詳情。無船名／航速異常者以紅色示警。以上皆直接畫在地圖，不需另開 MarineTraffic 網頁。
       </p>
       {!isAisConfigured() && (
-        <p className="text-[0.625rem] leading-relaxed text-amber-500/80">
-          目前為模擬船隻。到 aisstream.io 免費申請金鑰，填入 ⚙️ 設定即接真實 AIS。
-        </p>
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="rounded-lg border border-amber-500/60 bg-amber-500/10 px-2.5 py-2 text-left text-[0.6875rem] leading-relaxed text-amber-200 active:scale-95"
+        >
+          ⚠ <b>現在畫面上的船是模擬的</b>，不是真的船位。到 aisstream.io 免費申請金鑰，
+          填進設定就接真實 AIS。<span className="font-bold">按這裡打開設定 ›</span>
+        </button>
       )}
     </div>
   )

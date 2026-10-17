@@ -25,6 +25,8 @@ import {
   evaluateWatchdog,
   initialWatchdogState,
   isAuthFailure,
+  looksLikeBadKey,
+  nextQuickDeaths,
   type AisHealth,
 } from './aisWatchdog'
 
@@ -134,6 +136,10 @@ function subscribeReal(
   let noDataTimer: ReturnType<typeof setTimeout> | null = null
   let gotAny = false
   let attempt = 0
+  // 這一條連線有沒有收到東西、連續幾次「一連上就被切斷」（金鑰無效的特徵，見 aisWatchdog）
+  let gotThisConn = false
+  let openedAt: number | null = null
+  let quickDeaths = 0
   // 看門狗：存活看「有沒有資料」，不看 socket 狀態。詳見 aisWatchdog.ts。
   const wd = initialWatchdogState()
   let heartbeat: ReturnType<typeof setInterval> | null = null
@@ -151,8 +157,15 @@ function subscribeReal(
   const emit = () => onUpdate([...byMmsi.values()].filter((v) => inBox(v, curBox)))
 
   const connect = () => {
-    status(attempt === 0 ? 'AIS：連線 aisstream.io…' : `AIS：重新連線中（第 ${attempt} 次）…`)
-    ws = new WebSocket('wss://stream.aisstream.io/v0/stream')
+    // 已判定金鑰有問題時不要用「重新連線中」蓋掉那句說明
+    if (!looksLikeBadKey(quickDeaths)) {
+      status(attempt === 0 ? 'AIS：連線 aisstream.io…' : `AIS：重新連線中（第 ${attempt} 次）…`)
+    }
+    // 經自家 Worker 轉接（/api/ais），不直連 aisstream：
+    // aisstream 官方不支援瀏覽器直連，建議走伺服器端代理。見 worker/index.js。
+    gotThisConn = false
+    openedAt = null
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/ais`)
 
     ws.onopen = () => {
       // 刻意不在這裡把 attempt 歸零：握手成功不代表這條連線會送資料。
@@ -160,6 +173,7 @@ function subscribeReal(
       // 變成持續猛敲。改成收到第一筆真資料才歸零。
       wd.connectedAt = mono()
       wd.lastDataAt = null
+      openedAt = mono()
       status('AIS：已連線，訂閱畫面範圍船位，等待回報…（移動地圖即訂閱該區）')
       ws?.send(subMsg())
       // 15 秒內完全沒有任何訊息（連錯誤都沒有）→ 幾乎必為金鑰/連線數問題。
@@ -173,6 +187,7 @@ function subscribeReal(
     }
 
     ws.onmessage = (ev) => {
+      gotThisConn = true
       // 收到任何訊息（含錯誤）就取消「15 秒無回應」計時，避免通用訊息蓋掉真實原因。
       if (noDataTimer) {
         clearTimeout(noDataTimer)
@@ -257,6 +272,18 @@ function subscribeReal(
       if (closedByUs) return
       wd.connectedAt = null
       attempt++
+      quickDeaths = nextQuickDeaths(quickDeaths, openedAt === null ? null : mono() - openedAt, gotThisConn)
+      if (looksLikeBadKey(quickDeaths) && !wd.authBlocked) {
+        // aisstream 對無效金鑰是「連上一秒就切斷、不給任何原因」（實測），
+        // 不在這裡講清楚，使用者只會看到無止盡的「重新連線中」。
+        if (noDataTimer) clearTimeout(noDataTimer)
+        status(
+          `AIS：aisstream 一連上就切斷連線、沒給原因（連續 ${quickDeaths} 次）——這幾乎都是金鑰無效。` +
+            '請到 aisstream.io 登入 → API Keys 複製金鑰，貼到 ⚙️ 設定的「AISStream 金鑰」再試。',
+        )
+        reconnectTimer = setTimeout(connect, 60_000)
+        return
+      }
       // 金鑰被拒時用很慢的節奏探測，不要走正常退避梯子猛敲。
       const delay = wd.authBlocked ? 3_600_000 : backoffMs(attempt - 1)
       // aisstream 常把「金鑰無效」等原因放在 close reason，攤開顯示以利排查。

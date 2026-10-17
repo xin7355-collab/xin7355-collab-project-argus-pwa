@@ -8,6 +8,8 @@
  * 沒有 TLE 就算不出衛星的地面軌跡，也就無法回答「這一趟會不會掃到我這片海」。
  * （這是先前只能畫 ISS、其他衛星一律不畫的原因。）
  *
+ * 後來加了第二件：**幫瀏覽器代連 aisstream.io 的 AIS 即時船位**（/api/ais）。
+ *
  * 其餘所有路徑原封不動交給靜態資源處理，行為跟改之前一樣。
  */
 
@@ -92,9 +94,59 @@ function withCors(res) {
   return r
 }
 
+// ── AIS 即時船位轉接（/api/ais）────────────────────────────
+//
+// aisstream.io 官方文件明講：不支援從瀏覽器直接連線（不送 CORS），建議走伺服器端代理。
+// App 原本就是從 iPhone 瀏覽器直連，這就是「AIS 不能用」的原因。
+//
+// 做法是「直接轉手」：把升級成 WebSocket 的請求換個地址送給 aisstream，
+// 再把它的回應原樣交回瀏覽器。Cloudflare 會自己把兩條連線接起來，
+// 之後每一筆船位都不經過這支程式——免費方案每次請求只有 10ms CPU，
+// 如果每筆訊息都由 JS 轉發，船一多就會被砍。
+//
+// 金鑰照舊由 App 在連上後的第一則訊息送出（使用者在 ⚙️ 設定填的），這裡不碰。
+
+/** 上游。測試時可用環境變數換成本機假伺服器。 */
+const AIS_UPSTREAM = 'https://stream.aisstream.io/v0/stream'
+
+/** 只准自己的網頁用這個轉接，不然就是一個任人使用的 aisstream 免費代理。 */
+function originAllowed(origin, url) {
+  if (!origin) return true // 非瀏覽器（例如探測腳本）不帶 Origin
+  try {
+    const h = new URL(origin).host
+    return h === url.host || /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(h)
+  } catch {
+    return false
+  }
+}
+
+async function proxyAis(request, url, env) {
+  if ((request.headers.get('upgrade') || '').toLowerCase() !== 'websocket') {
+    return json({ error: '這個網址只接受 WebSocket 連線' }, 426)
+  }
+  if (!originAllowed(request.headers.get('origin'), url)) {
+    return json({ error: '不接受其他網站的連線' }, 403)
+  }
+  // 不帶瀏覽器的 Origin／Cookie 過去：對 aisstream 來說這是一條伺服器端連線
+  const headers = new Headers({ upgrade: 'websocket' })
+  const proto = request.headers.get('sec-websocket-protocol')
+  if (proto) headers.set('sec-websocket-protocol', proto)
+  try {
+    const res = await fetch(env.AIS_UPSTREAM || AIS_UPSTREAM, { headers })
+    if (res.status !== 101 || !res.webSocket) {
+      return json({ error: `aisstream 拒絕連線（HTTP ${res.status}）` }, 502)
+    }
+    return res
+  } catch (e) {
+    return json({ error: `連不到 aisstream：${e.message}` }, 502)
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
+
+    if (url.pathname === '/api/ais') return proxyAis(request, url, env)
 
     const m = url.pathname.match(/^\/api\/celestrak\/([A-Za-z0-9_-]+)\/?$/)
     if (m) {
