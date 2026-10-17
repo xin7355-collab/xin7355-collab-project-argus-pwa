@@ -30,12 +30,14 @@ if (!KEY) {
 }
 out(`金鑰長度 ${KEY.length}；${/^[A-Za-z0-9_-]+$/.test(KEY) ? '只有英數與連字號' : '⚠ 含有不像金鑰的字元（多半貼錯）'}`)
 
-function trial(name, url, box, origin) {
+function trial(name, url, box, origin, types = ['PositionReport']) {
   return new Promise((resolve) => {
     const t0 = Date.now()
     let openedAt = null
     let msgs = 0
     let error = ''
+    // 文字幀還是二進位幀：瀏覽器收到二進位會是 Blob，直接 JSON.parse 會全部失敗
+    let frames = { text: 0, binary: 0 }
     let settled = false
     const ws = new WebSocket(url, origin ? { origin } : {})
     const done = (code, why) => {
@@ -43,7 +45,7 @@ function trial(name, url, box, origin) {
       settled = true
       clearTimeout(timer)
       try { ws.terminate() } catch {}
-      resolve({ name, opened: openedAt !== null, aliveMs: openedAt === null ? null : Date.now() - openedAt, msgs, code, why: redact(why), error: redact(error), totalMs: Date.now() - t0 })
+      resolve({ name, frames, opened: openedAt !== null, aliveMs: openedAt === null ? null : Date.now() - openedAt, msgs, code, why: redact(why), error: redact(error), totalMs: Date.now() - t0 })
     }
     let timer = setTimeout(() => done(0, '握手逾時'), 15_000)
     ws.on('unexpected-response', (_q, res) => done(res.statusCode, `握手被拒 HTTP ${res.statusCode}`))
@@ -51,9 +53,10 @@ function trial(name, url, box, origin) {
       openedAt = Date.now()
       clearTimeout(timer)
       timer = setTimeout(() => done(1000, '聽滿 20 秒'), LISTEN_MS)
-      ws.send(JSON.stringify({ APIKey: KEY, BoundingBoxes: [box], FilterMessageTypes: ['PositionReport'] }))
+      ws.send(JSON.stringify({ APIKey: KEY, BoundingBoxes: [box], FilterMessageTypes: types }))
     })
-    ws.on('message', (d) => {
+    ws.on('message', (d, isBinary) => {
+      frames[isBinary ? 'binary' : 'text']++
       try {
         const m = JSON.parse(String(d))
         if (m?.MetaData && m?.MessageType) msgs++
@@ -74,14 +77,16 @@ const plan = [
   ['B 伺服器直連・台灣周邊', AIS, TAIWAN, null],
   ['C 帶瀏覽器來源直連・英吉利海峽', AIS, CHANNEL, APP],
   ['D 經本站轉接・英吉利海峽', RELAY, CHANNEL, APP],
+  // 跟 App 送的一模一樣：兩種訊息類型、地圖視野算出來的小數框（放英吉利海峽，才不會因為台灣沒船誤判）
+  ['E 照 App 的訂閱格式・經本站轉接', RELAY, [[50.0123456, -1.9876543], [51.4987654, 1.9912345]], APP, ['PositionReport', 'ShipStaticData']],
 ]
 const r = {}
-out('\n| 測試 | 連上 | 活多久 | 收到船位 | 怎麼結束 | 伺服器訊息 |\n|---|---|---|---|---|---|')
-for (const [name, url, box, origin] of plan) {
+out('\n| 測試 | 連上 | 活多久 | 收到船位 | 幀格式 | 怎麼結束 | 伺服器訊息 |\n|---|---|---|---|---|---|---|')
+for (const [name, url, box, origin, types] of plan) {
   // 一個一個來：免費金鑰同時多條連線可能互相擠掉，測出來會不準
-  const t = await trial(name, url, box, origin)
+  const t = await trial(name, url, box, origin, types)
   r[name[0]] = t
-  out(`| ${name} | ${t.opened ? '是' : '否'} | ${t.aliveMs === null ? '—' : (t.aliveMs / 1000).toFixed(1) + ' 秒'} | ${t.msgs} | ${t.why} | ${t.error || '—'} |`)
+  out(`| ${name} | ${t.opened ? '是' : '否'} | ${t.aliveMs === null ? '—' : (t.aliveMs / 1000).toFixed(1) + ' 秒'} | ${t.msgs} | 文字 ${t.frames.text}／二進位 ${t.frames.binary} | ${t.why} | ${t.error || '—'} |`)
   await new Promise((s) => setTimeout(s, 3000))
 }
 
@@ -101,6 +106,9 @@ if (!r.A.opened) {
   out(r.B.msgs > 0 ? `- ✅ 台灣周邊也有資料（20 秒 ${r.B.msgs} 筆）。` : '- ⚠ 台灣周邊 20 秒 0 筆：這一帶 aisstream 的接收站很少或沒有，App 看不到船是資料源的限制。')
   if (r.C.msgs === 0) out('- ❌ **aisstream 擋瀏覽器**：同一把金鑰帶瀏覽器來源就被切斷。App 必須走本站轉接。')
   else out('- ✅ 帶瀏覽器來源也收得到。')
+  const bin = Object.values(r).reduce((n, t) => n + t.frames.binary, 0)
+  if (bin > 0) out(`- ⚠ aisstream 用**二進位幀**送資料（共 ${bin} 幀）：瀏覽器收到的是 Blob 不是文字，App 要先轉成文字才能解析。`)
+  if (r.E.msgs === 0 && r.D.msgs > 0) out('- ❌ 照 App 的訂閱格式收不到，但簡單格式收得到：App 送的訂閱有問題。')
   if (r.D.msgs === 0) { out('- ❌ **本站轉接不通**：金鑰沒問題，但經 Cloudflare Worker 轉接收不到。要修轉接。'); broken = true }
   else out('- ✅ 本站轉接收得到。')
 }
