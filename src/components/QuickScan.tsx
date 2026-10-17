@@ -102,7 +102,9 @@ export function QuickScan() {
       }
 
       const spots = useTacticalStore.getState().brightSpots
-      setSummary(summarizeScan(spots, isAisConfigured()))
+      // 同 BrightSpotLayer：有金鑰 ≠ 資料可信，過期就不要下「可疑」的結論。
+      const aisUsable = isAisConfigured() && useTacticalStore.getState().aisUsable
+      setSummary(summarizeScan(spots, aisUsable))
       setPhase('done')
     } catch (e) {
       setPhase('error')

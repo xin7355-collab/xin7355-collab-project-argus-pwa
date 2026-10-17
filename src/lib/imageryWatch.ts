@@ -169,8 +169,13 @@ export interface WatchConfig {
 
 export type ConfigResult =
   | { ok: true; config: WatchConfig }
-  | { ok: false; missing: string[] }
-  | { ok: false; missing: []; error: string }
+  /**
+   * missing 有東西＝還沒設定（安靜跳過）；
+   * error 有東西＝填了但填錯（真的壞掉，要紅燈）。
+   * 刻意用同一個形狀而不是兩個 union 分支——兩個 ok:false 分支無法被 TS 收窄，
+   * 呼叫端讀 .error 會編不過。
+   */
+  | { ok: false; missing: string[]; error?: string }
 
 /**
  * 讀設定。缺哪些列出來給呼叫端決定要安靜跳過還是紅燈。

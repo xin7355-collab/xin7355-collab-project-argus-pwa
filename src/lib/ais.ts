@@ -20,11 +20,24 @@ export interface Vessel {
 }
 
 import { getConfig, isAisConfigured } from './config'
+import {
+  backoffMs,
+  evaluateWatchdog,
+  initialWatchdogState,
+  isAuthFailure,
+  type AisHealth,
+} from './aisWatchdog'
 
 export { isAisConfigured }
 
 type Listener = (vessels: Vessel[]) => void
 type StatusListener = (status: string) => void
+/**
+ * 回報「這份 AIS 資料現在可不可以信」。
+ * usable=false 時，需要可信 AIS 的功能（例如亮點掃描的「無AIS=可疑」）
+ * 必須改回報「比不了」，不可以拿過期船位硬比——那會兩個方向都判錯。
+ */
+type FreshListener = (usable: boolean, ageMs: number | null) => void
 /** AISStream 邊界框：[[南緯,西經],[北緯,東經]]。 */
 export type BBox = [[number, number], [number, number]]
 /** 訂閱控制代把手：停止 + 動態更新訂閱範圍（跟著地圖視野）。 */
@@ -71,9 +84,17 @@ const DEG = Math.PI / 180
  * 訂閱 AIS。回傳 { stop, setBox }：setBox 可隨地圖視野更新訂閱範圍，
  * 讓「看到哪裡就訂閱哪裡的船」。onStatus 回報連線狀態給 UI。
  */
-export function subscribeAIS(onUpdate: Listener, onStatus?: StatusListener, box: BBox = TW_BOX): AisHandle {
+export function subscribeAIS(
+  onUpdate: Listener,
+  onStatus?: StatusListener,
+  box: BBox = TW_BOX,
+  onFresh?: FreshListener,
+): AisHandle {
   const key = getConfig().aisKey
-  if (key) return subscribeReal(onUpdate, key, onStatus, box)
+  if (key) return subscribeReal(onUpdate, key, onStatus, box, onFresh)
+  // 模擬資料永遠是「現做的」，但它不是真的——標成不可信任，
+  // 免得沒金鑰時掃描拿假船位去判斷真目標。
+  onFresh?.(false, null)
   return subscribeSim(onUpdate)
 }
 
@@ -99,7 +120,13 @@ function subscribeSim(onUpdate: Listener): AisHandle {
 }
 
 /** 真實：連 aisstream.io WebSocket（含狀態回報、斷線自動重連、船名/船種）。 */
-function subscribeReal(onUpdate: Listener, key: string, onStatus: StatusListener | undefined, initBox: BBox): AisHandle {
+function subscribeReal(
+  onUpdate: Listener,
+  key: string,
+  onStatus: StatusListener | undefined,
+  initBox: BBox,
+  onFresh?: FreshListener,
+): AisHandle {
   const byMmsi = new Map<string, Vessel>()
   let ws: WebSocket | null = null
   let closedByUs = false
@@ -107,6 +134,11 @@ function subscribeReal(onUpdate: Listener, key: string, onStatus: StatusListener
   let noDataTimer: ReturnType<typeof setTimeout> | null = null
   let gotAny = false
   let attempt = 0
+  // 看門狗：存活看「有沒有資料」，不看 socket 狀態。詳見 aisWatchdog.ts。
+  const wd = initialWatchdogState()
+  let heartbeat: ReturnType<typeof setInterval> | null = null
+  let lastHealth: AisHealth | null = null
+  const mono = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
   let curBox: BBox = capBox(initBox) // 目前訂閱範圍（跟著地圖視野更新）
 
   const status = (s: string) => onStatus?.(s)
@@ -123,7 +155,11 @@ function subscribeReal(onUpdate: Listener, key: string, onStatus: StatusListener
     ws = new WebSocket('wss://stream.aisstream.io/v0/stream')
 
     ws.onopen = () => {
-      attempt = 0
+      // 刻意不在這裡把 attempt 歸零：握手成功不代表這條連線會送資料。
+      // 反覆「握手成功→沉默→斷線」的情況如果在這裡歸零，退避就永遠不會長大，
+      // 變成持續猛敲。改成收到第一筆真資料才歸零。
+      wd.connectedAt = mono()
+      wd.lastDataAt = null
       status('AIS：已連線，訂閱畫面範圍船位，等待回報…（移動地圖即訂閱該區）')
       ws?.send(subMsg())
       // 15 秒內完全沒有任何訊息（連錯誤都沒有）→ 幾乎必為金鑰/連線數問題。
@@ -146,7 +182,15 @@ function subscribeReal(onUpdate: Listener, key: string, onStatus: StatusListener
         const msg = JSON.parse(ev.data as string)
         // aisstream 若金鑰無效/超額/訂閱格式錯，會回一段 error 文字——攤開給使用者看。
         if (msg?.error || msg?.Error || msg?.message) {
-          status(`AIS：aisstream 回報「${msg.error || msg.Error || msg.message}」（多為金鑰無效或超額）`)
+          const text = String(msg.error || msg.Error || msg.message)
+          // 金鑰被拒就不要再走退避重試——重試再多次也沒用，只是吃掉連線數、
+          // 還會讓後來的通用錯誤蓋掉真正的原因。
+          if (isAuthFailure(text)) {
+            wd.authBlocked = true
+            status(`AIS：aisstream 拒絕這把金鑰（「${text}」）。到 ⚙️ 設定換一把再試。`)
+          } else {
+            status(`AIS：aisstream 回報「${text}」（多為超額或訂閱範圍太大）`)
+          }
           return
         }
         const type = msg?.MessageType
@@ -161,6 +205,11 @@ function subscribeReal(onUpdate: Listener, key: string, onStatus: StatusListener
         }
         const mmsi = String(meta.MMSI ?? meta.mmsi ?? '')
         if (!mmsi) return
+        // 這裡才是「真的有資料」。看門狗與退避都以這個時間為準，
+        // 不以握手成功為準——握手成功後長期沉默正是要抓的那種故障。
+        wd.lastDataAt = mono()
+        wd.authBlocked = false
+        attempt = 0
         const prev = byMmsi.get(mmsi)
 
         if (type === 'PositionReport') {
@@ -206,22 +255,57 @@ function subscribeReal(onUpdate: Listener, key: string, onStatus: StatusListener
 
     ws.onclose = (ev) => {
       if (closedByUs) return
+      wd.connectedAt = null
       attempt++
-      const delay = Math.min(30000, 2000 * attempt)
+      // 金鑰被拒時用很慢的節奏探測，不要走正常退避梯子猛敲。
+      const delay = wd.authBlocked ? 3_600_000 : backoffMs(attempt - 1)
       // aisstream 常把「金鑰無效」等原因放在 close reason，攤開顯示以利排查。
       const why = ev?.reason ? `（原因：${ev.reason}）` : ev?.code ? `（code ${ev.code}）` : ''
-      status(`AIS：連線中斷${why}，${Math.round(delay / 1000)} 秒後重連…`)
+      if (ev?.reason && isAuthFailure(String(ev.reason))) wd.authBlocked = true
+      status(
+        wd.authBlocked
+          ? `AIS：金鑰被拒${why}。換金鑰前重連沒有意義，已改為低頻探測。`
+          : `AIS：連線中斷${why}，${Math.round(delay / 1000)} 秒後重連…`,
+      )
       reconnectTimer = setTimeout(connect, delay)
     }
   }
 
   connect()
 
+  // 心跳：socket 不會自己告訴你它死了，只能定期檢查「上次收到資料多久了」。
+  // 20 秒一次夠即時，又不至於在手機上一直喚醒。
+  heartbeat = setInterval(() => {
+    const v = evaluateWatchdog(wd, mono())
+    onFresh?.(v.usable, v.ageMs)
+    // 只在狀態「改變」時出聲，不要每 20 秒洗一次狀態列。
+    if (v.health !== lastHealth) {
+      lastHealth = v.health
+      if (v.message) status(v.message)
+    }
+    if (v.health === 'recycle' && !closedByUs) {
+      // 這條連線已經死了但不自知。主動砍掉——不能等 onclose，它不會來。
+      wd.connectedAt = null
+      wd.lastDataAt = null
+      lastHealth = null
+      try {
+        ws?.close()
+      } catch {
+        /* 已經壞掉就算了，下面照樣重連 */
+      }
+      ws = null
+      attempt++
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      reconnectTimer = setTimeout(connect, 1000)
+    }
+  }, 20_000)
+
   return {
     stop: () => {
       closedByUs = true
       if (reconnectTimer) clearTimeout(reconnectTimer)
       if (noDataTimer) clearTimeout(noDataTimer)
+      if (heartbeat) clearInterval(heartbeat)
       try {
         ws?.close()
       } catch {

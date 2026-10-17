@@ -68,6 +68,8 @@ export function AisLayer({ map }: { map: L.Map }) {
       },
       (s) => setStatus(s), // 連線狀態回報到狀態列
       boxOf(),
+      // 把「這份 AIS 現在可不可以信」送進 store，掃描才不會拿過期船位下結論。
+      (usable, ageMs) => useTacticalStore.getState().setAisFresh(usable, ageMs),
     )
 
     // 移動/縮放地圖 → 更新訂閱範圍（防抖，避免拖曳時狂送）。

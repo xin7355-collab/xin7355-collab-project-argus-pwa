@@ -141,6 +141,15 @@ interface TacticalState {
 
   // ── AIS 船舶識別 (ais) ──────────────────────────────
   vessels: Vessel[]
+  /**
+   * 這份 AIS 資料現在可不可以信（有金鑰、連著、而且最近真的有收到船位）。
+   * 掃描的「無AIS=可疑」只能在 true 時下結論——拿過期船位比對會兩個方向都判錯：
+   * 移走的船留在舊位置害目標被誤判為「已知」，真的在那裡的船因為位置沒更新
+   * 而被標成「可疑」。
+   */
+  aisUsable: boolean
+  /** 距離最後一筆船位多久（毫秒）。沒收過回 null。 */
+  aisAgeMs: number | null
   /** 疊「VIIRS 夜間漁火」衛星圖層（免金鑰，看外海漁船燈光）。 */
   showBoatLights: boolean
   /** 疊「Sentinel-1 雷達暗船」圖層（需金鑰，看不廣播 AIS 的金屬船）。 */
@@ -355,6 +364,7 @@ interface TacticalState {
   setRescueResult: (env: MarineEnv | null, points: DriftPoint[]) => void
   setRescueStatus: (s: TacticalState['rescueStatus']) => void
   setVessels: (v: Vessel[]) => void
+  setAisFresh: (usable: boolean, ageMs: number | null) => void
   setShowBoatLights: (b: boolean) => void
   setShowRadarVessels: (b: boolean) => void
   setOwnPosition: (p: TacticalState['ownPosition']) => void
@@ -529,6 +539,8 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   showSearchPattern: false,
   trackSpacingNm: 1,
   vessels: [],
+  aisUsable: false,
+  aisAgeMs: null,
   showBoatLights: false,
   showRadarVessels: false,
   seaStateField: 'sst',
@@ -714,6 +726,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   setRescueResult: (env, points) => set({ rescueEnv: env, driftPoints: points }),
   setRescueStatus: (s) => set({ rescueStatus: s }),
   setVessels: (v) => set({ vessels: v }),
+  setAisFresh: (usable, ageMs) => set({ aisUsable: usable, aisAgeMs: ageMs }),
   setShowBoatLights: (b) => set({ showBoatLights: b }),
   setShowRadarVessels: (b) => set({ showRadarVessels: b }),
   setOwnPosition: (p) => set({ ownPosition: p }),

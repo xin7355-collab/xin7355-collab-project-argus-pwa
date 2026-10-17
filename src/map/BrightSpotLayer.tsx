@@ -79,7 +79,10 @@ export function BrightSpotLayer({ map }: { map: L.Map }) {
       maxSpots: 60,
     })
     const vessels = useTacticalStore.getState().vessels
-    const aisOn = isAisConfigured()
+    // 有金鑰 ≠ 資料可信。AIS 連線可能握手成功後就沉默，船位停在幾小時前。
+    // 拿過期船位比對會兩個方向都判錯（移走的船害目標被判「已知」、
+    // 真在那裡的船被標「可疑」），所以不新就回報「比不了」而不是硬比。
+    const aisOn = isAisConfigured() && useTacticalStore.getState().aisUsable
     const results: Detection[] = spots.map((s) => {
       const c = map.containerPointToLatLng(L.point(s.x, s.y))
       const sw = map.containerPointToLatLng(L.point(s.minX, s.maxY))

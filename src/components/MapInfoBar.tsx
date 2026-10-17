@@ -13,6 +13,9 @@ export function MapInfoBar({ map }: { map: L.Map }) {
   const observationDate = useTacticalStore((s) => s.observationDate)
   const opticalRadar = useTacticalStore((s) => s.opticalRadar)
   const setMapView = useTacticalStore((s) => s.setMapView)
+  const vessels = useTacticalStore((s) => s.vessels)
+  const aisUsable = useTacticalStore((s) => s.aisUsable)
+  const aisAgeMs = useTacticalStore((s) => s.aisAgeMs)
   const [center, setCenter] = useState<{ lat: number; lng: number; zoom: number }>(() => {
     const c = map.getCenter()
     return { lat: c.lat, lng: c.lng, zoom: map.getZoom() }
@@ -48,6 +51,18 @@ export function MapInfoBar({ map }: { map: L.Map }) {
     else imgTime = '📅 高解析空拍鑲嵌（Esri · 非即時、非單一日期）'
   }
 
+  // AIS 船位新不新，要常駐顯示而不是只丟一行狀態訊息——狀態列會被後面的
+  // 訊息蓋掉，但「這些船位是幾小時前的」是看地圖時隨時都要知道的事。
+  // 實測確認過：AIS 連線可能握手成功後就沉默，船位會一直停在舊位置。
+  let aisAge = ''
+  if (vessels.length > 0 && !aisUsable) {
+    const min = aisAgeMs === null ? null : Math.round(aisAgeMs / 60000)
+    aisAge =
+      min === null
+        ? '⚠ AIS 船位：尚未收到更新，畫面上的船位不可當即時用'
+        : `⚠ AIS 船位已 ${min < 60 ? `${min} 分鐘` : `${Math.round(min / 60)} 小時`}未更新，不是即時`
+  }
+
   return (
     <div className="map-info-pos pointer-events-none absolute left-3 z-[1000] flex flex-col gap-0.5">
       <span className="w-fit rounded bg-slate-900/80 px-2 py-0.5 font-mono text-[0.6875rem] text-tactical-cyan">
@@ -56,6 +71,11 @@ export function MapInfoBar({ map }: { map: L.Map }) {
       {imgTime && (
         <span className="w-fit rounded bg-slate-900/80 px-2 py-0.5 font-mono text-[0.625rem] text-amber-300">
           {imgTime}
+        </span>
+      )}
+      {aisAge && (
+        <span className="w-fit rounded bg-slate-900/80 px-2 py-0.5 font-mono text-[0.625rem] text-tactical-alert">
+          {aisAge}
         </span>
       )}
     </div>
