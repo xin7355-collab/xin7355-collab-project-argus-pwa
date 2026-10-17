@@ -32,31 +32,65 @@ test('壞掉的範圍要丟錯，不能默默查一個空範圍（那樣看起�
 // ── 查詢網址 ──────────────────────────────────────────────
 
 test('查詢網址帶齊必要參數', () => {
+  // 欄位名與 collection id 都是實測來的（見 docs/設定教學.md 的說明）：
+  // 舊的 /resto/api/.../search.json 已被上游汰除，對所有 collection 名稱都回 404。
   const u = buildCatalogUrl('Sentinel2', { west: 121, south: 23.5, east: 122.5, north: 25 }, 0, 86400000)
-  assert.match(u, /collections\/Sentinel2\/search\.json/)
-  assert.match(u, /box=121\.0000%2C23\.5000%2C122\.5000%2C25\.0000/)
-  assert.match(u, /startDate=1970-01-01T00%3A00%3A00\.000Z/)
-  assert.match(u, /sortOrder=descending/)
+  assert.ok(u.startsWith('https://stac.dataspace.copernicus.eu/v1/search?'), u)
+  assert.match(u, /collections=sentinel-2-l2a/, 'collection id 是小寫，大寫會被 400 拒絕')
+  assert.match(u, /bbox=121\.0000%2C23\.5000%2C122\.5000%2C25\.0000/)
+  // STAC 的時間是「起/迄」一個參數，不是兩個
+  assert.match(u, /datetime=1970-01-01T00%3A00%3A00\.000Z%2F1970-01-02T00%3A00%3A00\.000Z/)
+  assert.match(u, /sortby=-datetime/)
+  assert.ok(!u.includes('resto'), '不可以再用被汰除的 OpenSearch 端點')
+})
+
+test('Sentinel-1 用雷達那個 collection（不是光學的）', () => {
+  const u = buildCatalogUrl('Sentinel1', { west: 1, south: 2, east: 3, north: 4 }, 0, 1000)
+  assert.match(u, /collections=sentinel-1-grd/)
+})
+
+test('base 可以換成代理，路徑結構不變', () => {
+  const u = buildCatalogUrl('Sentinel2', { west: 1, south: 2, east: 3, north: 4 }, 0, 1000, 10, 'https://proxy.example/v1/')
+  assert.ok(u.startsWith('https://proxy.example/v1/search?'), u)
+  assert.match(u, /limit=10/)
 })
 
 // ── 解析回傳 ──────────────────────────────────────────────
 
-test('解析正常回傳', () => {
+// 這兩筆是實測回傳的縮版（欄位名照抄，沒有自己編）。
+test('解析 STAC 回傳（光學：有 eo:cloud_cover）', () => {
   const s = parseScenes({
+    type: 'FeatureCollection',
     features: [
-      { properties: { startDate: '2026-10-10T02:30:00.000Z', cloudCover: 12.4 } },
-      { properties: { startDate: '2026-10-09T02:30:00.000Z', cloudCover: 88 } },
+      { properties: { datetime: '2026-10-16T10:50:31.025000Z', start_datetime: '2026-10-16T10:50:31.025000Z', 'eo:cloud_cover': 98.27, 'eo:snow_cover': 0 } },
+      { properties: { datetime: '2026-10-15T10:50:31.025000Z', 'eo:cloud_cover': 12.4 } },
     ],
   }, 'Sentinel-2')
   assert.equal(s.length, 2)
   assert.equal(s[0].collection, 'Sentinel-2')
-  assert.equal(s[0].cloudPct, 12.4)
-  assert.equal(s[0].sensed, Date.parse('2026-10-10T02:30:00.000Z'))
+  assert.equal(s[0].cloudPct, 98.27)
+  assert.equal(s[0].sensed, Date.parse('2026-10-16T10:50:31.025Z'))
 })
 
-test('沒有雲量欄位（雷達）要給 null，不要變成 0 讓人以為是晴天', () => {
-  const s = parseScenes({ features: [{ properties: { startDate: '2026-10-10T02:30:00Z' } }] }, 'Sentinel-1')
+test('雷達沒有雲量欄位 → null，不能變成 0 讓人以為是大晴天', () => {
+  // SAR 穿雲，本來就沒有這個欄位。實測 sentinel-1-grd 的 properties 裡
+  // 完全沒有任何含 cloud 的 key。
+  const s = parseScenes({
+    features: [{ properties: { datetime: '2026-10-16T17:17:01.870509Z', 'sar:polarizations': ['VV', 'VH'] } }],
+  }, 'Sentinel-1')
   assert.equal(s[0].cloudPct, null)
+  assert.equal(s[0].sensed, Date.parse('2026-10-16T17:17:01.870509Z'))
+})
+
+test('只有 start_datetime 沒有 datetime 時也要讀得到', () => {
+  const s = parseScenes({ features: [{ properties: { start_datetime: '2026-10-10T02:30:00Z' } }] }, 'S')
+  assert.equal(s.length, 1)
+})
+
+test('舊的 OpenSearch 欄位名仍讀得到（上游搬家中，留退路）', () => {
+  const s = parseScenes({ features: [{ properties: { startDate: '2026-10-10T02:30:00Z', cloudCover: 7 } }] }, 'S')
+  assert.equal(s.length, 1)
+  assert.equal(s[0].cloudPct, 7)
 })
 
 test('壞資料一律略過，不炸也不產生假資料', () => {
@@ -65,7 +99,7 @@ test('壞資料一律略過，不炸也不產生假資料', () => {
   }
   // 時間解析不出來的那筆要被丟掉，好的那筆要留著
   const mixed = parseScenes({
-    features: [{ properties: { startDate: '壞時間' } }, { properties: { startDate: '2026-10-10T00:00:00Z' } }],
+    features: [{ properties: { datetime: '壞時間' } }, { properties: { datetime: '2026-10-10T00:00:00Z' } }],
   }, 'S')
   assert.equal(mixed.length, 1)
 })

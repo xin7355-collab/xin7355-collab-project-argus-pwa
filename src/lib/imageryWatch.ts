@@ -52,31 +52,52 @@ export function parseBbox(s: string): Bbox {
   return { west, south, east, north }
 }
 
-/** Copernicus 公開目錄的預設主機。 */
-export const CATALOG_BASE = 'https://catalogue.dataspace.copernicus.eu'
+/**
+ * Copernicus 公開 STAC 目錄（免金鑰，實測不需要任何 token）。
+ *
+ * 為什麼是這個主機而不是 stac.opensearch.dataspace.copernicus.eu：
+ * 兩個都能用，但 collection id 打錯時行為不同——
+ *   stac.dataspace…          → 400（大聲失敗）
+ *   stac.opensearch.dataspace… → 200 + features: []（安靜回空）
+ * 安靜回空會被讀成「這段時間沒有新影像」，而這正是使用者拿來決定
+ * 要不要出海的那句話。寧可紅燈也不要靜悄悄地騙人。
+ *
+ * 歷史：原本用的是 /resto/api/collections/{coll}/search.json（OpenSearch），
+ * 上游已經把它汰除，實測對所有 collection 名稱都回 404。
+ */
+export const CATALOG_BASE = 'https://stac.dataspace.copernicus.eu/v1'
+
+/** STAC 的 collection id。實測是小寫；大寫的 SENTINEL-2 會被拒絕。 */
+export const COLLECTIONS = {
+  Sentinel2: 'sentinel-2-l2a',
+  Sentinel1: 'sentinel-1-grd',
+} as const
+
+export type CollectionKey = keyof typeof COLLECTIONS
 
 /**
- * Copernicus 公開目錄的查詢網址（免金鑰）。
+ * Copernicus STAC 的查詢網址（免金鑰）。
  * base 可換成代理或自架端點——App 本身也有走 edge Worker 繞 CORS 的機制。
  */
 export function buildCatalogUrl(
-  collection: 'Sentinel1' | 'Sentinel2',
+  collection: CollectionKey,
   box: Bbox,
   fromMs: number,
   toMs: number,
   maxRecords = 50,
   base = CATALOG_BASE,
 ): string {
-  const b = [box.west, box.south, box.east, box.north].map((n) => n.toFixed(4)).join(',')
+  const id = COLLECTIONS[collection]
+  if (!id) throw new Error(`未知的 collection：${collection}`)
   const qs = new URLSearchParams({
-    box: b,
-    startDate: new Date(fromMs).toISOString(),
-    completionDate: new Date(toMs).toISOString(),
-    sortParam: 'startDate',
-    sortOrder: 'descending',
-    maxRecords: String(maxRecords),
+    collections: id,
+    bbox: [box.west, box.south, box.east, box.north].map((n) => n.toFixed(4)).join(','),
+    // STAC 的時間區間是用斜線分隔的 ISO 區間，不是兩個獨立參數
+    datetime: `${new Date(fromMs).toISOString()}/${new Date(toMs).toISOString()}`,
+    limit: String(maxRecords),
+    sortby: '-datetime',
   })
-  return `${base.replace(/\/+$/, '')}/resto/api/collections/${collection}/search.json?${qs}`
+  return `${base.replace(/\/+$/, '')}/search?${qs}`
 }
 
 function num(v: unknown): number | null {
@@ -85,8 +106,15 @@ function num(v: unknown): number | null {
 }
 
 /**
- * 寬容解析目錄回傳。欄位名在不同 collection 之間略有出入，
- * 而且線上實際格式沒驗到，所以每個欄位都試幾種常見寫法，取不到就給 null。
+ * 解析 STAC 的 FeatureCollection。
+ *
+ * 欄位名是實測來的（在 GitHub Actions 上打真的伺服器，開發沙箱連不出去）：
+ *   感測時間 → properties.datetime（與 start_datetime 相同）
+ *   雲量     → properties['eo:cloud_cover']（只有光學有；雷達沒有這個欄位，
+ *              因為 SAR 本來就穿雲——給 null，不能給 0 讓人以為是大晴天）
+ *
+ * 舊的 OpenSearch 欄位名（startDate / cloudCover）留著當退路：上游正在搬家，
+ * 萬一哪天又換回去或代理端回舊格式，至少不會整個解析不出來。
  */
 export function parseScenes(json: unknown, collection: string): Scene[] {
   if (!json || typeof json !== 'object') return []
@@ -97,10 +125,11 @@ export function parseScenes(json: unknown, collection: string): Scene[] {
     if (!f || typeof f !== 'object') continue
     const props = (f as { properties?: unknown }).properties
     const p = (props && typeof props === 'object' ? props : {}) as Record<string, unknown>
-    const iso = p.startDate ?? p.completionDate ?? p.published
+    const iso = p.datetime ?? p.start_datetime ?? p.startDate ?? p.completionDate ?? p.published
     const t = typeof iso === 'string' ? Date.parse(iso) : NaN
     if (!Number.isFinite(t)) continue
-    out.push({ sensed: t, collection, cloudPct: num(p.cloudCover) })
+    const cloud = p['eo:cloud_cover'] ?? p.cloudCover
+    out.push({ sensed: t, collection, cloudPct: num(cloud) })
   }
   return out
 }

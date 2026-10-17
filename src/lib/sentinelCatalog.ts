@@ -1,13 +1,18 @@
 // ── 找「最近一次有影像」的日期（CDSE 公開目錄，免 OAuth）──────────
 //
-// 高解析衛星非每天過境；這裡查 Copernicus Data Space 的公開 OpenSearch(resto) 目錄，
+// 高解析衛星非每天過境；這裡查 Copernicus Data Space 的公開 STAC 目錄，
 // 找出目前畫面上空最近一次 Sentinel-2(L2A) 過境、且雲量夠低的那天，讓使用者一鍵
 // 跳過去看「最近看得到船的影像」。
 //
 // 連線策略：若已設定邊緣 Worker（edgeAiUrl）→ 透過 Worker 代理查（伺服器端抓，
 // 保證繞過瀏覽器 CORS）；否則直連目錄（部分網路/瀏覽器會被跨域擋）。
+//
+// 網址與欄位名共用 imageryWatch.ts 的那一份，不要在這裡再拼一次：
+// 原本兩邊各自寫死 /resto/api/.../search.json，上游汰除之後兩邊一起壞掉，
+// 而且只有排程那邊會亮紅燈，App 這邊是靜悄悄地「查不到最近影像」。
 
 import { getConfig } from './config'
+import { buildCatalogUrl } from './imageryWatch.ts'
 
 export interface RecentImage {
   /** YYYY-MM-DD（該日有 Sentinel-2 過境）。 */
@@ -57,10 +62,14 @@ export async function findRecentSentinelDate(
       if (j?.error) throw new Error(String(j.error))
     } else {
       // 直連公開目錄（可能被瀏覽器跨域擋）
-      const url =
-        `https://catalogue.dataspace.copernicus.eu/resto/api/collections/Sentinel2/search.json?` +
-        `box=${box}&startDate=${from}&completionDate=${to}` +
-        `&productType=S2MSI2A&sortParam=startDate&sortOrder=descending&maxRecords=100`
+      const [w, s0, e, n] = box.split(',').map(Number)
+      const url = buildCatalogUrl(
+        'Sentinel2',
+        { west: w, south: s0, east: e, north: n },
+        Date.parse(from),
+        Date.parse(to),
+        100,
+      )
       const res = await fetch(url, { signal: ctrl.signal })
       if (!res.ok) throw new Error('catalog ' + res.status)
       j = await res.json()
@@ -73,9 +82,11 @@ export async function findRecentSentinelDate(
   // 同一天可能多個磚——每天保留最低雲量者
   const byDate = new Map<string, number>()
   for (const f of feats) {
-    const d = String(f?.properties?.startDate || '').slice(0, 10)
+    // STAC 的欄位名（實測）。舊的 OpenSearch 名稱留著當退路，見 imageryWatch.ts。
+    const pr = f?.properties ?? {}
+    const d = String(pr.datetime || pr.start_datetime || pr.startDate || '').slice(0, 10)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue
-    const cloud = Number(f?.properties?.cloudCover)
+    const cloud = Number(pr['eo:cloud_cover'] ?? pr.cloudCover)
     const c = Number.isFinite(cloud) ? cloud : 100
     if (!byDate.has(d) || c < (byDate.get(d) as number)) byDate.set(d, c)
   }

@@ -124,10 +124,15 @@ async function proxyCatalog(body) {
   const from = String(body.from || '')
   const to = String(body.to || '')
   const maxRecords = Math.min(200, Math.max(1, Number(body.maxRecords) || 100))
+  // CDSE 的 STAC 目錄。舊的 /resto/api/.../search.json（OpenSearch）已被上游汰除，
+  // 對所有 collection 名稱都回 404——實測過，不是猜的。
+  // collection id 必須小寫；寫成 SENTINEL-2 這個主機會回 400。
+  // 這份網址的來源是 src/lib/imageryWatch.ts 的 buildCatalogUrl；
+  // Worker 是獨立的 plain JS 沒辦法 import，改那邊時這裡要一起改。
   const url =
-    `https://catalogue.dataspace.copernicus.eu/resto/api/collections/Sentinel2/search.json?` +
-    `box=${encodeURIComponent(box)}&startDate=${encodeURIComponent(from)}&completionDate=${encodeURIComponent(to)}` +
-    `&productType=S2MSI2A&sortParam=startDate&sortOrder=descending&maxRecords=${maxRecords}`
+    `https://stac.dataspace.copernicus.eu/v1/search?collections=sentinel-2-l2a` +
+    `&bbox=${encodeURIComponent(box)}&datetime=${encodeURIComponent(`${from}/${to}`)}` +
+    `&limit=${maxRecords}&sortby=-datetime`
   try {
     const r = await fetch(url, { headers: { accept: 'application/json' } })
     if (!r.ok) return json({ error: `catalog ${r.status}` }, 502)

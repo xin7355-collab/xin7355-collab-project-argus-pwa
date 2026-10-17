@@ -146,6 +146,11 @@ async function main() {
   }
   if (failed.length) console.log(`::warning::部分來源查詢失敗 — ${failed.join('；')}`)
 
+  // 只印數量，不印座標也不印場景編號——公開 repo 的 Actions log 是公開的。
+  // 但數量一定要印：沒有它就分不出「查詢成功、真的沒有新影像」和
+  // 「查詢其實壞了、只是沒報錯」，而這兩件事的處置完全不同。
+  console.log(`目錄查詢成功，時間窗內共 ${all.length} 筆。`)
+
   const v = decideNotify(all, now)
   if (!v.notify) {
     console.log(`最近 ${hours} 小時沒有新影像，不通知。`)

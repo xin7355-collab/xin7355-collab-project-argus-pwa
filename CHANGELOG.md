@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.40.2 — 目錄端點搬家（盯梢 404 修正）
+
+### 修正
+- 🔴 **Copernicus 目錄查詢全部 404**：上游把舊的 OpenSearch 介面
+  （`/resto/api/collections/{coll}/search.json`）汰除了。影響兩個地方：
+  - **排程盯梢**：手動觸發時紅燈「兩個目錄來源都查不到」。
+  - **App 的「🔎 自動找最近有影像的日期」**：同一個死端點，一直查不到。
+  改用 CDSE 的 STAC 目錄 `https://stac.dataspace.copernicus.eu/v1/search`
+  （免金鑰），collection id 是小寫的 `sentinel-2-l2a` / `sentinel-1-grd`，
+  感測時間欄位是 `datetime`、雲量是 `eo:cloud_cover`。
+  以上全部是在 GitHub Actions 上打真的伺服器問出來的，不是照文件猜的。
+- 盯梢跑完會印「時間窗內共 N 筆」（只有數量，不含座標）。
+  沒有它就分不出「查詢成功、真的沒新影像」和「查詢其實壞了」。
+
 ## v2.40.1 — 防禦健檢修正
 
 ### 修正
