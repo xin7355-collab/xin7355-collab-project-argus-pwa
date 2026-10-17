@@ -6,6 +6,10 @@
   //
   // 純靜態資源 Worker（無自訂程式碼）：只需 assets.directory 指向 build 產物。
   "name": "argus-app",
+  // 這支 Worker 原本是「純靜態資源」。加上 main 是為了代抓 celestrak 的
+  // 軌道根數（TLE）——celestrak 沒送 CORS 標頭，瀏覽器直連會被擋，
+  // 沒有 TLE 就算不出衛星地面軌跡。其餘路徑仍交給靜態資源，行為不變。
+  "main": "worker/index.js",
   "compatibility_date": "2025-06-01",
   // 明確開啟 workers.dev 公開網址（部署後為 argus-app.<你的子網域>.workers.dev）。
   // 雖然這是預設值，但寫出來才不會出現「部署成功卻沒有網址可開」而查不到原因。
@@ -13,6 +17,8 @@
   "workers_dev": true,
   "assets": {
     "directory": "./dist",
+    // 有 main 時必須給 binding，Worker 程式碼才拿得到靜態資源來回應。
+    "binding": "ASSETS",
     // 單頁式應用：找不到的路徑一律回 index.html（前端自行處理）。
     "not_found_handling": "single-page-application"
   }
