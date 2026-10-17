@@ -24,6 +24,7 @@ import { backoffMs, evaluateWatchdog, initialWatchdogState, isAuthFailure, type 
 import {
   chooseRoute,
   diagnose,
+  frameText,
   KEY_TEST_BOX,
   ROUTE_NAME,
   runKeyTest,
@@ -231,6 +232,8 @@ function subscribeReal(
     msgsThisConn = 0
     openedAt = null
     ws = new WebSocket(routeUrl(route))
+    // 二進位幀用 ArrayBuffer 收（同步可解碼）；預設 Blob 要非同步讀，見 frameText
+    ws.binaryType = 'arraybuffer'
 
     ws.onopen = () => {
       // 刻意不在這裡把 attempt 歸零：握手成功不代表這條連線會送資料。
@@ -266,7 +269,8 @@ function subscribeReal(
         noDataTimer = null
       }
       try {
-        const msg = JSON.parse(ev.data as string)
+        const text = frameText(ev.data)
+        const msg = JSON.parse(text)
         // aisstream 若金鑰無效/超額/訂閱格式錯，會回一段 error 文字——攤開給使用者看。
         if (msg?.error || msg?.Error || msg?.message) {
           const text = String(msg.error || msg.Error || msg.message)
@@ -285,7 +289,7 @@ function subscribeReal(
         // 非船位訊息（多為伺服器提示/錯誤）：把原文攤開，最有助於排查。
         if (!meta) {
           if (!gotAny) {
-            const raw = (typeof ev.data === 'string' ? ev.data : '').slice(0, 160)
+            const raw = text.slice(0, 160)
             if (raw) status(`AIS：伺服器回應非船位訊息——${raw}`)
           }
           return
@@ -435,7 +439,11 @@ function subscribeReal(
       status('AIS：測試金鑰中——借英吉利海峽收 15 秒…')
       try {
         const { result, text } = await runKeyTest(
-          (r) => new WebSocket(routeUrl(r)) as unknown as ProbeSocket,
+          (r) => {
+            const s = new WebSocket(routeUrl(r))
+            s.binaryType = 'arraybuffer'
+            return s as unknown as ProbeSocket
+          },
           subMsg(KEY_TEST_BOX),
         )
         if (result.msgs > 0) {

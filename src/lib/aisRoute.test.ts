@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   chooseRoute,
   diagnose,
+  frameText,
   isPositionMessage,
   keyTestVerdict,
   runKeyTest,
@@ -71,6 +72,15 @@ test('測試金鑰的結論', () => {
   assert.match(keyTestVerdict(0, true), /金鑰多半無效/)
   assert.match(keyTestVerdict(0, false), /連不上/)
   assert.match(keyTestVerdict(0, true, 'Api Key Is Not Valid'), /Api Key Is Not Valid/)
+})
+
+test('二進位幀（瀏覽器收到 ArrayBuffer）也要讀得懂', () => {
+  const json = '{"MessageType":"PositionReport","MetaData":{"MMSI":1}}'
+  const buf = new TextEncoder().encode(json)
+  assert.equal(frameText(buf.buffer), json)
+  assert.equal(frameText(buf), json)
+  assert.equal(isPositionMessage(buf.buffer), true)
+  assert.equal(frameText(null), '')
 })
 
 test('只有船位訊息算「收到資料」，錯誤訊息不算', () => {

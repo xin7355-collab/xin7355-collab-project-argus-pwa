@@ -148,9 +148,23 @@ export interface ProbeResult extends ConnAttempt {
   error: string
 }
 
+/**
+ * WebSocket 收到的一幀轉成文字。aisstream 可能用二進位幀送 JSON：
+ * 伺服器端的 ws 套件會自動當文字處理，但瀏覽器收到的是 Blob／ArrayBuffer，
+ * 直接 JSON.parse 會全部失敗、一艘船都畫不出來。連線端要設 binaryType='arraybuffer'
+ * （Blob 只能非同步讀），這裡統一解碼。
+ */
+export function frameText(data: unknown): string {
+  if (typeof data === 'string') return data
+  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data)
+  if (ArrayBuffer.isView(data)) return new TextDecoder().decode(data)
+  return ''
+}
+
 /** 船位訊息才算數：錯誤訊息、伺服器提示都不算「收到資料」。 */
-export function isPositionMessage(raw: unknown): boolean {
-  if (typeof raw !== 'string') return false
+export function isPositionMessage(data: unknown): boolean {
+  const raw = frameText(data)
+  if (!raw) return false
   try {
     const m = JSON.parse(raw)
     return Boolean(m?.MetaData && m?.MessageType)
@@ -159,8 +173,9 @@ export function isPositionMessage(raw: unknown): boolean {
   }
 }
 
-function errorText(raw: unknown): string {
-  if (typeof raw !== 'string') return ''
+function errorText(data: unknown): string {
+  const raw = frameText(data)
+  if (!raw) return ''
   try {
     const m = JSON.parse(raw)
     return String(m?.error || m?.Error || '')
