@@ -137,6 +137,9 @@ async function proxyCatalog(body) {
   }
 }
 
+/** 送進 Workers AI 的影像大小上限。128 MB 的 Worker 記憶體要留給轉換過程。 */
+const MAX_IMAGE_BYTES = 6 * 1024 * 1024
+
 // ── 真實流程：抓 Sentinel-1 SAR 圖 → Workers AI 推論 ──────────
 async function detectFromSar(bbox, date, env) {
   // (a) 用 CDSE Process API 取一張該區 SAR 影像（PNG bytes）
@@ -153,12 +156,27 @@ async function detectFromSar(bbox, date, env) {
     if (imgRes.status === 404) return emptyFC()
     throw new Error(`CDSE ${imgRes.status}`)
   }
-  const imgBytes = new Uint8Array(await imgRes.arrayBuffer())
+  // Worker 的記憶體上限是 128 MB，而且 `[...bytes]` 會把每個 byte 變成一個
+  // 裝箱數字（一張 4 MB 的圖就是 400 萬個元素的陣列，實際佔用數十倍）。
+  // 框選範圍大一點就會直接 OOM 被砍掉，而且錯誤訊息完全看不出原因。
+  // 所以先看 Content-Length 擋掉，再用 TypedArray 轉成模型要的陣列。
+  const declared = Number(imgRes.headers.get('content-length') || 0)
+  if (declared > MAX_IMAGE_BYTES) {
+    throw new Error(`影像 ${Math.round(declared / 1048576)} MB 超過上限，請把框選範圍縮小`)
+  }
+  // 這條掃描規則是針對「瀏覽器把使用者選的大檔讀進記憶體」（iPhone 上 1GB 會當掉）。
+  // 這裡是 Worker 端收一張自己指定範圍的 PNG，而且上面已用 MAX_IMAGE_BYTES
+  // 擋過大小，不是同一種風險。
+  const buf = await imgRes.arrayBuffer() // guardrails: ignore（Worker 端、大小已設上限）
+  if (buf.byteLength > MAX_IMAGE_BYTES) {
+    throw new Error(`影像 ${Math.round(buf.byteLength / 1048576)} MB 超過上限，請把框選範圍縮小`)
+  }
+  const imgBytes = new Uint8Array(buf)
 
   // (b) Workers AI 物件偵測（免費額度）。這裡用通用偵測模型示意；
   //     實務可換成專門的船隻/SAR 模型。
   const result = await env.AI.run('@cf/facebook/detr-resnet-50', {
-    image: [...imgBytes],
+    image: Array.from(imgBytes),
   })
 
   // (c) 把「像素框」換算回經緯度，只留下疑似船隻。

@@ -29,6 +29,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # 建置 + wrangler deploy 實測約 30 秒。給 20 分鐘已經很寬鬆。
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -46,12 +48,15 @@ jobs:
           [ -n "$tok" ] && echo "::add-mask::$tok"
           [ -n "$acct" ] && echo "::add-mask::$acct"
 
+          # 下面幾行會出現 secret/token 字樣，但印的都是「欄位名稱與說明」，
+          # 真值在上面已經 ::add-mask:: 遮掉，而且只印長度（$tok_len）。
+          # 靜態掃描只看關鍵字，所以在那幾行標 guardrails: ignore。
           missing=""
           [ -z "$tok" ] && missing="$missing CLOUDFLARE_API_TOKEN"
           [ -z "$acct" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
           if [ -n "$missing" ]; then
-            echo "::error::缺少 secret:$missing"
-            echo "請到 Settings → Secrets and variables → Actions → New repository secret 新增。"
+            echo "::error::缺少 secret:$missing"  # guardrails: ignore（印的是欄位名稱，不是值）
+            echo "請到 Settings → Secrets and variables → Actions → New repository secret 新增。"  # guardrails: ignore（純說明文字）
             echo "CLOUDFLARE_API_TOKEN：Cloudflare 後台 My Profile → API Tokens，範本選 Edit Cloudflare Workers"
             echo "CLOUDFLARE_ACCOUNT_ID：Cloudflare 後台 Workers & Pages 右側可複製"
             exit 1
@@ -100,7 +105,7 @@ jobs:
           if ! printf '%s' "$tok" | grep -qE '^[A-Za-z0-9._~-]+$'; then
             echo "::error::CLOUDFLARE_API_TOKEN 含有不該出現的符號（如引號、冒號、斜線）"
             echo "長度：$tok_len 字元。常見原因：連 \"Authorization: Bearer ...\" 整行一起貼、"
-            echo "或貼成 JSON 片段。請只貼 token 本身。"
+            echo "或貼成 JSON 片段。請只貼 token 本身。"  # guardrails: ignore（純說明文字）
             exit 1
           fi
 

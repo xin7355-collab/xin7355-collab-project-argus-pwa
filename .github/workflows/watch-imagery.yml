@@ -32,6 +32,8 @@ concurrency:
 jobs:
   watch:
     runs-on: ubuntu-latest
+    # 只打兩支 API。每 6 小時跑一次，卡住會跟下一輪疊在一起。
+    timeout-minutes: 10
     # 只讀——這個工作不需要寫 repo 的任何權限
     permissions:
       contents: read

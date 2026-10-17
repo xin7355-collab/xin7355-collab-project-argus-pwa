@@ -16,7 +16,11 @@ export async function saveOrShareText(filename: string, text: string, mime: stri
     const file = new File([text], filename, { type: mime })
     const nav = navigator as Navigator & { canShare?: (d: unknown) => boolean }
     if (typeof navigator.share === 'function' && nav.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title: filename })
+      // 只傳 files，絕對不要同時帶 title 或 text。
+      // iOS 的分享表單遇到「檔案 + 文字」會只送出那段文字，檔案被默默丟掉——
+      // 使用者按了匯出、分享表單也跳出來了，傳到 LINE 的卻只有一行檔名。
+      // 檔名已經在 File 物件裡，分享表單自己會顯示。
+      await navigator.share({ files: [file] })
       return 'shared'
     }
   } catch {

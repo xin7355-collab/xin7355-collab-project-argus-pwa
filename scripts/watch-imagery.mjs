@@ -15,11 +15,14 @@
 // 不把 last-seen 寫回 repo，因為那會洩漏你在盯哪片海。
 
 import {
+  MAX_RETRIES,
   buildCatalogUrl,
   decideNotify,
   parseScenes,
   planUnconfiguredExit,
   readWatchConfig,
+  retryDelayMs,
+  shouldRetry,
 } from '../src/lib/imageryWatch.ts'
 
 const selfTest = process.argv.includes('--self-test')
@@ -27,34 +30,72 @@ const selfTest = process.argv.includes('--self-test')
 // 排程遇到沒設定要安靜跳過，不然每 6 小時亮一次紅燈吵人。
 const requireConfig = process.argv.includes('--require-config')
 
-async function getJson(url, timeoutMs = 20000) {
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, { signal: ctrl.signal })
-    if (!res.ok) throw new Error(`目錄服務回應 ${res.status}`)
-    return await res.json()
-  } finally {
-    clearTimeout(timer)
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * 帶退避重試的請求。
+ *
+ * 為什麼值得重試：這支腳本每 6 小時才跑一次。上游一次暫時性的 503，
+ * 代價不是「晚一點拿到」，而是「這一輪完全沒通知」——真的有新影像也不會知道。
+ * 重試政策（哪些狀態碼、等多久、怎麼讀 Retry-After）在 imageryWatch.ts，有單元測試。
+ *
+ * 連線層的失敗（DNS、逾時、連線被重置）同樣重試：海上網路本來就會斷斷續續。
+ */
+async function fetchRetry(url, init = {}, timeoutMs = 20000, label = '上游') {
+  let lastErr
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+    try {
+      const res = await fetch(url, { ...init, signal: ctrl.signal })
+      if (res.ok) return res
+      if (!shouldRetry(res.status) || attempt === MAX_RETRIES) {
+        throw new Error(`${label}回應 ${res.status}`)
+      }
+      const wait = retryDelayMs(attempt + 1, res.headers.get('retry-after'))
+      console.log(`::notice::${label} ${res.status}，${Math.round(wait / 1000)} 秒後重試（第 ${attempt + 1}/${MAX_RETRIES} 次）`)
+      await sleep(wait)
+    } catch (e) {
+      // 非 HTTP 的失敗（逾時、連線被重置）也重試，但自己丟的錯誤不要再吞一次
+      if (e instanceof Error && e.message.startsWith(label)) throw e
+      lastErr = e
+      if (attempt === MAX_RETRIES) break
+      const wait = retryDelayMs(attempt + 1)
+      console.log(`::notice::${label}連線失敗，${Math.round(wait / 1000)} 秒後重試（第 ${attempt + 1}/${MAX_RETRIES} 次）`)
+      await sleep(wait)
+    } finally {
+      clearTimeout(timer)
+    }
   }
+  throw new Error(`${label}連線失敗：${lastErr instanceof Error ? lastErr.message : lastErr}`)
+}
+
+async function getJson(url, timeoutMs = 20000) {
+  const res = await fetchRetry(url, {}, timeoutMs, '目錄服務')
+  return await res.json()
 }
 
 const NTFY_BASE = (process.env.NTFY_BASE || 'https://ntfy.sh').replace(/\/+$/, '')
 const CATALOG = (process.env.CATALOG_BASE || '').replace(/\/+$/, '') || undefined
 
 async function notify(topic, title, body) {
-  const res = await fetch(`${NTFY_BASE}/${encodeURIComponent(topic)}`, {
-    method: 'POST',
-    headers: {
-      // 標題與標籤要用 RFC 2047 之外的安全寫法：ntfy 的 header 只吃 ASCII，
-      // 中文標題改放在內文第一行，header 用英數字，才不會整則被丟掉。
-      Title: 'Argus: new satellite imagery',
-      Tags: 'satellite',
-      Priority: 'default',
+  // 推播比查目錄更不能漏：查目錄失敗頂多這輪沒看，推播失敗是「有新影像卻沒告訴你」。
+  await fetchRetry(
+    `${NTFY_BASE}/${encodeURIComponent(topic)}`,
+    {
+      method: 'POST',
+      headers: {
+        // 標題與標籤要用 RFC 2047 之外的安全寫法：ntfy 的 header 只吃 ASCII，
+        // 中文標題改放在內文第一行，header 用英數字，才不會整則被丟掉。
+        Title: 'Argus: new satellite imagery',
+        Tags: 'satellite',
+        Priority: 'default',
+      },
+      body: `${title}\n${body}`,
     },
-    body: `${title}\n${body}`,
-  })
-  if (!res.ok) throw new Error(`ntfy 回應 ${res.status}`)
+    20000,
+    'ntfy',
+  )
 }
 
 async function main() {

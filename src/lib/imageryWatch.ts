@@ -232,3 +232,59 @@ export function planUnconfiguredExit(missing: string[], requireConfig: boolean):
     message: `尚未設定 ${names}，這次排程跳過。設定好之後就會自動開始盯梢，不需要再做別的事。`,
   }
 }
+
+
+// ── 重試政策 ───────────────────────────────────────────────
+//
+// 這支腳本每 6 小時才跑一次。上游一次暫時性的 503，代價不是「晚一點拿到」，
+// 而是「這一輪完全沒通知」——真的有新影像也不會知道，而且要等六小時。
+// 所以暫時性錯誤值得重試；但永久性錯誤（主題名打錯、範圍格式錯）重試幾次
+// 也一樣，只會把紅燈拖晚，不如早點報出來讓人去修。
+
+/** 最多重試幾次（不含第一次嘗試）。 */
+export const MAX_RETRIES = 4
+
+/** 單次等待上限。上游叫我們等一小時的話，排程早就被下一輪取代了。 */
+export const MAX_BACKOFF_MS = 60_000
+
+/**
+ * 這個狀態碼值不值得重試。
+ *
+ * 429 與 5xx 是暫時性的。其他 4xx 代表請求本身有問題（主題名、參數、授權），
+ * 重試不會變對。
+ */
+export function shouldRetry(status: number): boolean {
+  return status === 429 || (status >= 500 && status < 600)
+}
+
+/**
+ * 第 attempt 次重試要等多久（attempt 從 1 起算）。
+ *
+ * 基本是 2/4/8/16 秒的指數退避。上游有給 Retry-After 就聽它的——
+ * 不聽的話等於在被限流時繼續敲，只會被擋更久。
+ * header 可能是秒數，也可能是 HTTP 日期，兩種都要能讀。
+ */
+export function retryDelayMs(
+  attempt: number,
+  retryAfter?: string | null,
+  nowMs: number = Date.now(),
+): number {
+  const backoff = Math.min(MAX_BACKOFF_MS, 2000 * Math.pow(2, Math.max(0, attempt - 1)))
+  if (!retryAfter) return backoff
+
+  const raw = retryAfter.trim()
+  // 純數字 = 秒數
+  if (/^\d+$/.test(raw)) {
+    const ms = Number(raw) * 1000
+    return Math.min(MAX_BACKOFF_MS, Math.max(backoff, ms))
+  }
+  // HTTP 日期
+  const at = Date.parse(raw)
+  if (Number.isFinite(at)) {
+    // 已經過去的時間點（上游時鐘偏差）不能變成負數等待
+    const ms = Math.max(0, at - nowMs)
+    return Math.min(MAX_BACKOFF_MS, Math.max(backoff, ms))
+  }
+  // 看不懂就用自己的退避，不要因為 header 格式怪就不等
+  return backoff
+}

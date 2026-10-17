@@ -1,12 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  MAX_BACKOFF_MS,
   buildCatalogUrl,
   decideNotify,
   parseBbox,
   parseScenes,
   planUnconfiguredExit,
   readWatchConfig,
+  retryDelayMs,
+  shouldRetry,
   type Scene,
 } from './imageryWatch.ts'
 
@@ -168,4 +171,43 @@ test('手動觸發遇到沒設定：紅燈（exit 1），因為他正在設定�
   assert.equal(p.level, 'error')
   assert.match(p.message, /NTFY_TOPIC、WATCH_BBOX/)
   assert.match(p.message, /設定教學/, '要指向教學文件')
+})
+
+// ── 重試政策 ───────────────────────────────────────────────
+
+test('只重試暫時性錯誤：429 與 5xx 要重試，其他 4xx 不要', () => {
+  for (const s of [429, 500, 502, 503, 504]) {
+    assert.equal(shouldRetry(s), true, `${s} 是暫時性的，該重試`)
+  }
+  for (const s of [400, 401, 403, 404, 410, 422]) {
+    assert.equal(shouldRetry(s), false, `${s} 重試幾次都一樣，只會拖晚紅燈`)
+  }
+})
+
+test('退避是 2/4/8/16 秒，而且有上限', () => {
+  assert.equal(retryDelayMs(1), 2000)
+  assert.equal(retryDelayMs(2), 4000)
+  assert.equal(retryDelayMs(3), 8000)
+  assert.equal(retryDelayMs(4), 16000)
+  assert.ok(retryDelayMs(20) <= MAX_BACKOFF_MS, '不能無限長大')
+})
+
+test('Retry-After 是秒數時要聽它的（被限流還硬敲只會被擋更久）', () => {
+  assert.equal(retryDelayMs(1, '30'), 30000)
+  // 上游要的比自己的退避短時，取較長的——它說 1 秒不代表真的只要 1 秒
+  assert.equal(retryDelayMs(3, '1'), 8000)
+  assert.ok(retryDelayMs(1, '99999') <= MAX_BACKOFF_MS, '上游叫我們等一小時也不能真的等')
+})
+
+test('Retry-After 是 HTTP 日期時也要讀得懂', () => {
+  const now = Date.parse('2026-10-17T00:00:00Z')
+  assert.equal(retryDelayMs(1, 'Sat, 17 Oct 2026 00:00:25 GMT', now), 25000)
+  // 上游時鐘偏差導致時間點在過去 → 不能變成負數等待
+  assert.equal(retryDelayMs(1, 'Sat, 17 Oct 2026 00:00:00 GMT', now + 9999), 2000)
+})
+
+test('Retry-After 看不懂時退回自己的退避，不是不等就重打', () => {
+  for (const bad of ['', '   ', 'soon', 'NaN', '不知道']) {
+    assert.equal(retryDelayMs(2, bad), 4000, `「${bad}」應該退回自己的退避`)
+  }
 })

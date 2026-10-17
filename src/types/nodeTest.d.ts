@@ -11,6 +11,9 @@
 declare module 'node:test' {
   /** 註冊一個測試；回傳 Promise 時會被等待。 */
   export function test(name: string, fn: () => void | Promise<void>): void
+  /** 每個測試前／後執行。用來裝卸全域測試樁（例如蓋掉 navigator）。 */
+  export function beforeEach(fn: () => void | Promise<void>): void
+  export function afterEach(fn: () => void | Promise<void>): void
   export default test
 }
 

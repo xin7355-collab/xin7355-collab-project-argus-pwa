@@ -17,6 +17,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # 預設逾時是 6 小時。真的跑起來約 2 分鐘；卡住代表壞了，
+    # 不該讓它燒掉幾小時的額度（公開 repo 雖然不計費，但會塞住後面的工作）。
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
