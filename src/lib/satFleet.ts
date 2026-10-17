@@ -39,6 +39,13 @@ export interface FleetResult {
   missing: string[]
   /** 全部抓到的筆數，用來判斷是不是整包都失敗。 */
   total: number
+  /**
+   * 這次有哪些群組沒抓到（每項已經是人看得懂的一句話）。
+   *
+   * 沒有這個欄位的話，weather 群組掛掉會讓 VIIRS 顯示成「清單裡找不到這顆」——
+   * 聽起來像是衛星退役了，實際上只是這次沒下載到，重試就會好。
+   */
+  groupErrors?: string[]
 }
 
 /** 把抓回來的 TLE 文字分配到各衛星。純函式，好測。 */
@@ -102,6 +109,8 @@ export async function fetchFleetTle(timeoutMs = 15000): Promise<FleetResult> {
   if (texts.length === 0) {
     throw new Error(`取不到軌道根數 — ${errs.join('；')}`)
   }
-  cache = { at: Date.now(), texts }
-  return assignFleet(texts)
+  // 只有全抓到才進快取。部分失敗也快取的話，使用者按「重算」會拿到
+  // 同一份殘缺資料，連續半小時都以為那顆衛星真的不見了。
+  if (errs.length === 0) cache = { at: Date.now(), texts }
+  return { ...assignFleet(texts), groupErrors: errs }
 }

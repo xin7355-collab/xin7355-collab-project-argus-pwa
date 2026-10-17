@@ -3,11 +3,13 @@
 // 目的：讓海上知道「哪顆衛星、幾點過境、可看什麼影像」，好排偵搜/取像時機。
 //
 // 誠實說明：這裡用「太陽同步衛星每天在固定『地方時』通過同一緯度」的特性做
-// 近似——不做完整 TLE/SGP4 軌道推算。故：
+// 近似——不做完整 TLE/SGP4 軌道推算（那個在 passPlan.ts，需要連網抓根數）。故：
 //   - 過境「時段（幾點）」相當準（±約 20 分，以本地時間近似當地地方時）。
 //   - 每日型（VIIRS/MODIS，掃幅很寬）→ 幾乎每天涵蓋，可給「下次過境」具體時刻。
 //   - 多日重訪（Sentinel/Landsat，掃幅窄）→ 只能給「過境時段＋週期」，確切是哪
 //     一天仍以 Copernicus/USGS 為準（要看實際軌道相位與影像磚）。
+
+import { formatDist, type DistUnit } from './units.ts'
 
 export interface SatDef {
   id: string
@@ -131,13 +133,13 @@ export function crossingsText(hours: number[]): string {
 
 // ── 掃幅 vs 你關心的範圍 ───────────────────────────────────
 //
-// 使用者問「下次過境會不會拍到我這片海」。要真的回答「拍到哪裡」，
-// 需要該衛星的軌道根數（TLE）才能算出地面軌跡——本 App 取不到，
-// 不會拿假的錨點硬畫一條線出來騙人。
+// 「哪一趟會剛好掃過這裡」現在由 passPlan.ts 用 SGP4 + 真實軌道根數回答
+// （TLE 由自家 Worker 代抓）。這裡回答的是另一個、不用連網就答得出來的
+// 問題：「一趟掃得夠不夠寬」。
 //
-// 但問題有一半是可以誠實回答的：「一趟掃得夠不夠寬」。
 // 掃幅是公開且穩定的規格，畫面範圍算得出來，兩者相比就知道
 // 「這顆衛星一趟掃得住我這片海嗎，還是要拼好幾趟」。
+// 離線、或根數抓不到的時候，這一段仍然有用。
 
 /** 網際網路地圖在赤道、zoom 0 時每像素多少公尺。 */
 const M_PER_PX_Z0 = 156543.03392
@@ -159,22 +161,24 @@ export interface SwathFit {
   text: string
 }
 
-/** 把「掃幅 vs 畫面寬度」講成一句話。 */
-export function swathFit(swathKm: number, viewKm: number): SwathFit {
+/** 把「掃幅 vs 畫面寬度」講成一句話。單位跟隨使用者設定（預設浬）。 */
+export function swathFit(swathKm: number, viewKm: number, unit: DistUnit = 'nm'): SwathFit {
   if (!Number.isFinite(viewKm) || viewKm <= 0) {
     return { coversView: false, ratio: 0, text: "" }
   }
   const ratio = swathKm / viewKm
+  const sw = formatDist(swathKm, unit, 0)
+  const vw = formatDist(viewKm, unit, 0)
   if (ratio >= 1) {
     return {
       coversView: true,
       ratio,
-      text: `掃幅 ${Math.round(swathKm)}km 是目前畫面寬（約 ${Math.round(viewKm)}km）的 ${ratio.toFixed(1)} 倍，一趟蓋得住`,
+      text: `掃幅 ${sw} 是目前畫面寬（約 ${vw}）的 ${ratio.toFixed(1)} 倍，一趟蓋得住`,
     }
   }
   return {
     coversView: false,
     ratio,
-    text: `掃幅 ${Math.round(swathKm)}km 比目前畫面窄（約 ${Math.round(viewKm)}km），一趟只蓋得住約 ${Math.round(ratio * 100)}%，要拼好幾趟或縮小範圍`,
+    text: `掃幅 ${sw} 比目前畫面窄（約 ${vw}），一趟只蓋得住約 ${Math.round(ratio * 100)}%，要拼好幾趟或縮小範圍`,
   }
 }

@@ -48,3 +48,10 @@ test('畫面寬度異常時不要回 NaN 或亂講', () => {
     assert.equal(f.text, '')
   }
 })
+
+test('掃幅文字跟著使用者單位走（專案預設浬，不要印 km）', () => {
+  const nm = swathFit(2330, 500)
+  assert.match(nm.text, /浬/)
+  assert.ok(!/km/.test(nm.text), `預設不該出現 km：${nm.text}`)
+  assert.match(swathFit(2330, 500, 'km').text, /km/)
+})

@@ -8,6 +8,7 @@ import type { ImagerySourceId, OpticalSource } from '../lib/imagerySources'
 import { baseForOptical, daysEarlier, opticalForBase } from '../lib/imagerySources'
 import type { Detection } from '../lib/detection'
 import type { IssFix } from '../lib/issTrack'
+import type { SatPassOverlay } from '../lib/passPlan'
 import type { Typhoon } from '../lib/typhoon'
 import type { BaseLayerId } from '../lib/baseLayers'
 import type { TideEvent, SeaAreaForecast } from '../lib/cwaMarine'
@@ -94,6 +95,12 @@ interface TacticalState {
   issFix: IssFix | null
   /** 最近一段航跡（新的在後面）。 */
   issTrail: { lat: number; lng: number; at: number }[]
+
+  /**
+   * 使用者點選要在地圖上看的那一趟衛星過境。
+   * 不持久化：根數會過期，存下來下次開 App 會畫出一條舊的軌跡。
+   */
+  satPass: SatPassOverlay | null
 
   // ── AI 分析結果 ─────────────────────────────────────
   detections: DetectionCollection | null
@@ -351,6 +358,8 @@ interface TacticalState {
   setShowIss: (v: boolean) => void
   /** 寫入一筆 ISS 位置並接到航跡尾端（maxTrail 為航跡上限）。 */
   setIssFix: (f: IssFix, maxTrail: number) => void
+  /** 選一趟過境畫到地圖上；再點一次同一趟（或傳 null）就收起來。 */
+  setSatPass: (p: SatPassOverlay | null) => void
   setOpticalRadar: (v: boolean) => void
   bumpScan: () => void
   setScanSensitivity: (v: number) => void
@@ -513,6 +522,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   showIss: false,
   issFix: null,
   issTrail: [],
+  satPass: null,
   opticalRadar: false,
   scanTick: 0,
   scanSensitivity: 3,
@@ -661,6 +671,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
       showIss: false,
       issFix: null,
       issTrail: [],
+      satPass: null,
       cwaTide: null,
       cwaSeaAreas: null,
       animPlaying: false,
@@ -702,6 +713,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   setCompare: (c) => set({ compare: c }),
   bumpConfigRev: () => set({ configRev: get().configRev + 1 }),
   setShowIss: (v) => set({ showIss: v, ...(v ? {} : { issFix: null, issTrail: [] }) }),
+  setSatPass: (p) => set({ satPass: p }),
   setIssFix: (f, maxTrail) => {
     const trail = [...get().issTrail, { lat: f.lat, lng: f.lng, at: f.at }]
     // 跨換日線時經度會從 +180 跳到 -180，直接連起來會在地圖上拉一條橫貫全圖的
