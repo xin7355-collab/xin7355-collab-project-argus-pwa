@@ -188,3 +188,56 @@ export function coversPoint(
   if (!near) return null
   return { covered: near.km <= swathKm / 2, km: near.km, at: near.at }
 }
+
+
+/** 一次「掃過目標點」的時段。 */
+export interface PassWindow {
+  /** 進入掃幅的時刻（毫秒）。 */
+  startMs: number
+  /** 離開掃幅的時刻（毫秒）。 */
+  endMs: number
+  /** 這一趟最接近目標的距離（公里）。 */
+  closestKm: number
+  /** 最接近的時刻（毫秒）。 */
+  closestMs: number
+}
+
+/**
+ * 找出軌跡上所有「掃得到目標點」的時段。
+ *
+ * 跟 coversPoint 的差別：那個只回答「有沒有、最近多少」，
+ * 這個回答「第幾趟、從幾點到幾點」——使用者要排作業時間，需要的是後者。
+ *
+ * 用取樣點判斷，所以起訖時間的精度就是取樣間隔。邊界幾公里內不要當精準值：
+ * 真正的取像邊界還受姿態與排程影響，那不是軌道算得出來的。
+ */
+export function findPasses(
+  track: TrackPoint[],
+  swathKm: number,
+  lat: number,
+  lng: number,
+): PassWindow[] {
+  const half = swathKm / 2
+  const out: PassWindow[] = []
+  let cur: PassWindow | null = null
+
+  for (const p of track) {
+    const d = distanceKm(lat, lng, p.lat, p.lng)
+    if (d <= half) {
+      if (!cur) {
+        cur = { startMs: p.at, endMs: p.at, closestKm: d, closestMs: p.at }
+      } else {
+        cur.endMs = p.at
+        if (d < cur.closestKm) {
+          cur.closestKm = d
+          cur.closestMs = p.at
+        }
+      }
+    } else if (cur) {
+      out.push(cur)
+      cur = null
+    }
+  }
+  if (cur) out.push(cur)
+  return out
+}

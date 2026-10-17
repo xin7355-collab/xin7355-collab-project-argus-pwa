@@ -77,8 +77,13 @@
   **零測試框架相依**。`node:test` 的型別在 `src/types/nodeTest.d.ts` 自己宣告——
   不要裝 `@types/node`，否則全域 `setTimeout` 會變成 `NodeJS.Timeout`，
   專案裡的 `useRef<number>()` 計時器會全部型別不符。
-  被測模組要能在純 Node 跑，所以**不要 import 其他模組**（Node ESM 要副檔名，
-  但專案其他地方的 import 都不帶副檔名）。
+  被測模組要能在純 Node 跑。Node 的 ESM **要求相對 import 帶副檔名**，
+  但專案其他地方的 import 都不帶，所以規則是：
+  - **有單元測試的模組**，相對 import 一律寫成 `./x.ts`（tsconfig 已開
+    `allowImportingTsExtensions`，Vite 也吃這種寫法）。
+  - `import type` 會被型別抹除，不帶副檔名也沒關係。
+  - npm 套件（如 `satellite.js`）是 bare specifier，正常解析。
+  踩過兩次：`ERR_MODULE_NOT_FOUND: Cannot find module '.../tle'`。
 - **需要的 Secrets**（GitHub → Settings → Secrets → Actions）：
   - `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`（部署用）
   - `VITE_*` 前端金鑰為 build 期打包，沒設也能跑（會退回免金鑰來源與模擬資料）

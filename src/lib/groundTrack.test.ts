@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   coversPoint,
+  findPasses,
   groundTrack,
   nearestApproach,
   splitAtDateline,
@@ -9,6 +10,7 @@ import {
   swathEdges,
   wrapLng,
   type OrbitAnchor,
+  type TrackPoint,
 } from './groundTrack.ts'
 import { destPoint, distanceKm } from './windRadar.ts'
 
@@ -142,4 +144,43 @@ test('最近接近點會回報時刻，才知道「幾點掃到」', () => {
 test('空軌跡不能炸，要回 null', () => {
   assert.equal(nearestApproach([], 0, 0), null)
   assert.equal(coversPoint([], 290, 0, 0), null)
+})
+
+test('找過境時段：掃得到就給起訖與最接近時刻', () => {
+  const tr = groundTrack(SUNSYNC, 0, 600_000, 20)
+  const target = tr[12]
+  const passes = findPasses(tr, 290, target.lat, target.lng)
+  assert.equal(passes.length, 1, '這段軌跡只會經過一次')
+  const p = passes[0]
+  assert.ok(p.startMs <= target.at && target.at <= p.endMs, '目標時刻要落在時段內')
+  assert.ok(p.closestKm < 1, `最接近應趨近 0，實際 ${p.closestKm.toFixed(1)}`)
+  assert.equal(p.closestMs, target.at)
+  assert.ok(p.endMs > p.startMs, '時段要有長度')
+})
+
+test('找過境時段：掃不到就是空陣列，不要硬給一筆', () => {
+  const tr = groundTrack(SUNSYNC, 0, 600_000, 20)
+  // 挪到地球另一側
+  assert.deepEqual(findPasses(tr, 290, -SUNSYNC.lat, SUNSYNC.lng - 120), [])
+})
+
+test('找過境時段：掃幅越寬，時段越長（物理上必然）', () => {
+  const tr = groundTrack(SUNSYNC, 0, 600_000, 20)
+  const t = tr[12]
+  const narrow = findPasses(tr, 100, t.lat, t.lng)[0]
+  const wide = findPasses(tr, 1000, t.lat, t.lng)[0]
+  assert.ok(wide.endMs - wide.startMs > narrow.endMs - narrow.startMs)
+})
+
+test('找過境時段：同一段軌跡經過兩次要分成兩筆，不能併成一大段', () => {
+  // 造一條「靠近→遠離→再靠近」的假軌跡
+  const fake: TrackPoint[] = [
+    { lat: 24.0, lng: 122, at: 0 },
+    { lat: 24.5, lng: 122, at: 1000 }, // 近
+    { lat: 30.0, lng: 122, at: 2000 }, // 遠
+    { lat: 24.5, lng: 122, at: 3000 }, // 又近
+  ]
+  const passes = findPasses(fake, 200, 24.5, 122)
+  assert.equal(passes.length, 2, '中間離開過就要切成兩筆')
+  assert.ok(passes[0].endMs < passes[1].startMs)
 })

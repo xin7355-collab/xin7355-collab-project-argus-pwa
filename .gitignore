@@ -16,3 +16,6 @@ tsconfig.tsbuildinfo
 
 # 比較用的臨時建置產物
 dist-before/
+
+# wrangler 本機開發狀態（miniflare 的 sqlite/暫存 bundle），不該進版控
+.wrangler/
