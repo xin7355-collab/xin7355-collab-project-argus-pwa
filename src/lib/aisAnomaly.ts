@@ -52,18 +52,22 @@ export interface VesselAnalysis {
 export function analyzeVessel(v: Vessel): VesselAnalysis {
   const alerts: string[] = []
   const dk = coastKm(v.lat, v.lng)
+  // 航標（浮標、燈塔）不是船：沒有航速、常沒船種，照船的規則判會變成一堆「身分不明」假警報
+  if (v.kind === 'aton') return { vessel: v, alerts, level: 'ok', coastKm: dk }
   const unknown = v.name === '(無船名)' || v.type === '不明'
   const inTerritorial = dk <= TERRITORIAL_KM
   const inContiguous = dk <= CONTIGUOUS_KM
-  const loitering = v.sog >= LOITER_MIN && v.sog <= LOITER_MAX
+  // 航速沒回報（AIS 的 102.3）就是不知道：不判滯留、不判超速，不能當成 0 或 102 節
+  const sog = v.sog
+  const loitering = sog !== null && sog >= LOITER_MIN && sog <= LOITER_MAX
 
   let score = 0
   if (unknown) {
     alerts.push('無船名/身分不明')
     score += inTerritorial ? 2 : 1
   }
-  if (v.sog > SPEED_ANOMALY_KN) {
-    alerts.push(`航速異常 ${v.sog.toFixed(0)} kn`)
+  if (sog !== null && sog > SPEED_ANOMALY_KN) {
+    alerts.push(`航速異常 ${sog.toFixed(0)} kn`)
     score += 1
   }
   if (inTerritorial && unknown) {
@@ -77,7 +81,7 @@ export function analyzeVessel(v: Vessel): VesselAnalysis {
     alerts.push('近岸低速滯留（疑似接駁/等待）')
     score += inTerritorial ? 2 : 1
   }
-  if (v.sog >= FAST_NEAR_COAST_KN && inContiguous && unknown) {
+  if (sog !== null && sog >= FAST_NEAR_COAST_KN && inContiguous && unknown) {
     alerts.push('近岸高速＋無身分（疑似可疑運輸快艇）')
     score += 2
   }
@@ -116,6 +120,8 @@ export function analyzeApproach(
   const cosLat = Math.cos(own.lat * DEG) || 1e-6
   const out: ApproachInfo[] = []
   for (const v of vessels) {
+    // 不知道航速或航向就算不出最近接近點；航標不會動
+    if (v.kind === 'aton' || v.sog === null || v.cog === null) continue
     const ex = (v.lng - own.lng) * 60 * cosLat // 東向浬
     const ny = (v.lat - own.lat) * 60 // 北向浬
     const dist = Math.hypot(ex, ny)

@@ -4,6 +4,7 @@ import { CoordField } from './CoordField'
 import { projectPosition, courseToText } from '../lib/intercept'
 import { buildSitrep, shareReport } from '../lib/report'
 import { fmtDDM } from '../lib/coordParse'
+import { cogText, lockText, sogText } from '../lib/aisStore'
 
 const MINS = [15, 30, 60, 120]
 
@@ -37,9 +38,9 @@ export function DrPanel() {
   useEffect(() => {
     if (open && targetPrefill) {
       setStart({ lat: targetPrefill.lat, lng: targetPrefill.lng })
-      setCourse(Math.round(targetPrefill.cog))
-      setSpeed(Math.round(targetPrefill.sog))
-      setStatus(`起點鎖定「${targetPrefill.name}」`)
+      if (targetPrefill.cog !== null) setCourse(Math.round(targetPrefill.cog))
+      if (targetPrefill.sog !== null) setSpeed(Math.round(targetPrefill.sog))
+      setStatus(lockText('起點鎖定', targetPrefill))
       setTargetPrefill(null)
     }
   }, [open, targetPrefill, setStatus, setTargetPrefill])
@@ -54,10 +55,10 @@ export function DrPanel() {
   const matches = q ? vessels.filter((v) => v.name.toLowerCase().includes(q) || v.mmsi.includes(q)).slice(0, 8) : []
   const pickVessel = (v: (typeof vessels)[number]) => {
     setStart({ lat: v.lat, lng: v.lng })
-    setCourse(Math.round(v.cog))
-    setSpeed(Math.round(v.sog))
+    if (v.cog !== null) setCourse(Math.round(v.cog))
+    if (v.sog !== null) setSpeed(Math.round(v.sog))
     setPick('')
-    setStatus(`起點鎖定「${v.name}」`)
+    setStatus(lockText('起點鎖定', v))
   }
 
   const goto = (p: { lat: number; lng: number }) => {
@@ -111,7 +112,7 @@ export function DrPanel() {
                   className="flex items-center justify-between gap-2 rounded border border-slate-700 bg-slate-800/60 px-2 py-1 text-left active:scale-95"
                 >
                   <span className="min-w-0 flex-1 truncate text-[0.6875rem] font-semibold text-slate-200">🔺 {v.name}</span>
-                  <span className="shrink-0 font-mono text-[0.5625rem] text-slate-400">{v.cog.toFixed(0)}°／{v.sog.toFixed(0)}kn</span>
+                  <span className="shrink-0 font-mono text-[0.5625rem] text-slate-400">{cogText(v.cog)}°／{sogText(v.sog)}kn</span>
                 </button>
               ))}
             </div>

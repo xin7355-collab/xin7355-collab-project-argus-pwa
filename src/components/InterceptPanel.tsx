@@ -3,6 +3,7 @@ import { useTacticalStore } from '../store/tacticalStore'
 import { CoordField } from './CoordField'
 import { solveIntercept, courseToText } from '../lib/intercept'
 import { buildSitrep, shareReport } from '../lib/report'
+import { cogText, lockText, sogText } from '../lib/aisStore'
 
 /**
  * 攔截計算（🎯）：輸入目標位置／航向／航速與我方航速，算出「該往哪個方向開、
@@ -35,9 +36,9 @@ export function InterceptPanel() {
   useEffect(() => {
     if (open && targetPrefill) {
       setTarget({ lat: targetPrefill.lat, lng: targetPrefill.lng })
-      setTCourse(Math.round(targetPrefill.cog))
-      setTSpeed(Math.round(targetPrefill.sog))
-      setStatus(`目標鎖定「${targetPrefill.name}」`)
+      if (targetPrefill.cog !== null) setTCourse(Math.round(targetPrefill.cog))
+      if (targetPrefill.sog !== null) setTSpeed(Math.round(targetPrefill.sog))
+      setStatus(lockText('目標鎖定', targetPrefill))
       setTargetPrefill(null)
     }
   }, [open, targetPrefill, setStatus, setTargetPrefill])
@@ -64,10 +65,10 @@ export function InterceptPanel() {
     : []
   const pickVessel = (v: (typeof vessels)[number]) => {
     setTarget({ lat: v.lat, lng: v.lng })
-    setTCourse(Math.round(v.cog))
-    setTSpeed(Math.round(v.sog))
+    if (v.cog !== null) setTCourse(Math.round(v.cog))
+    if (v.sog !== null) setTSpeed(Math.round(v.sog))
     setPickTarget('')
-    setStatus(`目標鎖定「${v.name}」`)
+    setStatus(lockText('目標鎖定', v))
   }
 
   const showOnMap = () => {
@@ -150,7 +151,7 @@ export function InterceptPanel() {
                   className="flex items-center justify-between gap-2 rounded border border-slate-700 bg-slate-800/60 px-2 py-1 text-left active:scale-95"
                 >
                   <span className="min-w-0 flex-1 truncate text-[0.6875rem] font-semibold text-slate-200">🔺 {v.name}</span>
-                  <span className="shrink-0 font-mono text-[0.5625rem] text-slate-400">{v.cog.toFixed(0)}°／{v.sog.toFixed(0)}kn</span>
+                  <span className="shrink-0 font-mono text-[0.5625rem] text-slate-400">{cogText(v.cog)}°／{sogText(v.sog)}kn</span>
                 </button>
               ))}
             </div>

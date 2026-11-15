@@ -7,6 +7,7 @@ import { ROUTE_NAME, type ConnAttempt } from '../lib/aisRoute'
 import { SentinelLayerStatus } from './SentinelLayerStatus'
 import { keyHint } from '../lib/keyText'
 import { getConfig } from '../lib/config'
+import { sogText } from '../lib/aisStore'
 
 /** AIS 模式控制面板：船舶數、搜尋、異常警示、衛星船隻疊層（漁火／雷達）。 */
 export function AisControls() {
@@ -25,16 +26,19 @@ export function AisControls() {
   const keyTest = useTacticalStore((s) => s.aisKeyTest)
   const requestAisKeyTest = useTacticalStore((s) => s.requestAisKeyTest)
   const hint = keyHint(getConfig().aisKey)
-  const analyses = analyzeVessels(vessels)
+  // 船與航標分開算：航標（浮標、燈塔）不算「船數」，也不進可疑名單與全部清單
+  const ships = vessels.filter((v) => v.kind === 'ship')
+  const atons = vessels.length - ships.length
+  const analyses = analyzeVessels(ships)
   const flagged = analyses.filter((a) => a.level !== 'ok')
   // 🎯 趨近我方（需 GPS 定位）：會近距離通過的船，碰撞/接觸預警
-  const approaches = ownPosition ? analyzeApproach(vessels, ownPosition).slice(0, 6) : []
+  const approaches = ownPosition ? analyzeApproach(ships, ownPosition).slice(0, 6) : []
 
   // 📋 全部船隻：依「距我方（或畫面中心）」由近到遠排序，一次瀏覽
   const [showAll, setShowAll] = useState(false)
   const ref = ownPosition ?? mapView
   const cosLat = Math.cos((ref.lat * Math.PI) / 180) || 1e-6
-  const allByDist = vessels
+  const allByDist = ships
     .map((v) => ({
       v,
       nm: Math.hypot((v.lng - ref.lng) * 60 * cosLat, (v.lat - ref.lat) * 60),
@@ -42,9 +46,9 @@ export function AisControls() {
     .sort((a, b) => a.nm - b.nm)
   // 一次看到全部船：縮放地圖到涵蓋所有船位。
   const fitAll = () => {
-    if (vessels.length === 0) return
-    fitPoints(vessels.map((v) => [v.lat, v.lng] as [number, number]))
-    setStatus(`已縮放至涵蓋全部 ${vessels.length} 艘船`)
+    if (ships.length === 0) return
+    fitPoints(ships.map((v) => [v.lat, v.lng] as [number, number]))
+    setStatus(`已縮放至涵蓋全部 ${ships.length} 艘船`)
   }
 
   // 🔎 搜尋船隻（船名或 MMSI）
@@ -62,11 +66,17 @@ export function AisControls() {
     <div className="flex flex-col gap-2 rounded-lg border border-slate-700 bg-tactical-panel/90 p-3">
       <div className="flex items-center justify-between">
         <span className="text-xs text-slate-400">🔺 AIS 即時船位（已在圖上）</span>
-        <span className="font-mono text-sm font-bold text-tactical-green">{vessels.length}</span>
+        <span className="font-mono text-sm font-bold text-tactical-green">{ships.length}</span>
       </div>
+      {vessels.length > 0 && (
+        <p className="-mt-1 text-[0.5625rem] leading-relaxed text-slate-500">
+          ▲ 尖端是船頭方向；● 是沒回報方向的船；淡色＝超過 10 分鐘沒回報。
+          {atons > 0 && ` ◆ 航標 ${atons} 個（浮標、燈塔，不算船）。`}點船可看最近航跡。
+        </p>
+      )}
 
       {/* 一次看到全部船：縮放涵蓋所有船 + 展開全部清單 */}
-      {vessels.length > 0 && (
+      {ships.length > 0 && (
         <div className="grid grid-cols-2 gap-1.5">
           <button
             onClick={fitAll}
@@ -82,13 +92,13 @@ export function AisControls() {
                 : 'border-slate-600 bg-slate-900/60 text-slate-300'
             }`}
           >
-            📋 全部清單（{vessels.length}）
+            📋 全部清單（{ships.length}）
           </button>
         </div>
       )}
 
       {/* 📋 全部船隻清單：依距離由近到遠，點即定位 */}
-      {showAll && vessels.length > 0 && (
+      {showAll && ships.length > 0 && (
         <div className="flex max-h-52 flex-col gap-0.5 overflow-y-auto rounded border border-slate-700 bg-slate-900/40 p-1">
           <div className="px-1 pb-0.5 text-[0.5625rem] text-slate-500">
             依{ownPosition ? '距我方' : '距畫面中心'}由近到遠 · 點船定位
@@ -103,7 +113,7 @@ export function AisControls() {
                 🔺 {v.name}
               </span>
               <span className="shrink-0 font-mono text-[0.5625rem] text-slate-400">
-                {nm.toFixed(1)}浬 · {v.sog.toFixed(0)}kn
+                {nm.toFixed(1)}浬 · {sogText(v.sog)}kn
               </span>
             </button>
           ))}
@@ -129,7 +139,7 @@ export function AisControls() {
                 className="flex items-center justify-between gap-2 rounded border border-slate-700 bg-slate-800/60 px-2 py-1 text-left active:scale-95"
               >
                 <span className="min-w-0 flex-1 truncate text-[0.6875rem] font-semibold text-slate-200">🔺 {v.name}</span>
-                <span className="shrink-0 font-mono text-[0.5625rem] text-slate-400">{v.mmsi}｜{v.sog.toFixed(0)}kn</span>
+                <span className="shrink-0 font-mono text-[0.5625rem] text-slate-400">{v.mmsi}｜{sogText(v.sog)}kn</span>
               </button>
             ))}
           </div>

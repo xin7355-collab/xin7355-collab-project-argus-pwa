@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import { useTacticalStore } from '../store/tacticalStore'
 import { subscribeAIS, isAisConfigured, type AisHandle, type Vessel, type BBox } from '../lib/ais'
-import { analyzeVessel } from '../lib/aisAnomaly'
+import { VesselMarkers } from './aisMarkers'
 import { buildGibsBoatLights } from '../lib/gibs'
 import { buildWmsConfig, isSentinelConfigured, layerFor } from '../lib/sentinel'
 
@@ -63,11 +63,12 @@ export function AisLayer({ map }: { map: L.Map }) {
       ]
     }
 
+    // 航跡要向連線把手要；把手在 subscribeAIS 回來之後才有，所以先用 ref 包一層
+    const markers = new VesselMarkers(group, toTool, (mmsi) => handleRef.current?.track(mmsi) ?? [])
     const handle = subscribeAIS(
       (vessels) => {
         setVessels(vessels)
-        group.clearLayers()
-        for (const v of vessels) drawVessel(group, v, toTool)
+        markers.update(vessels)
       },
       (s) => setStatus(s), // 連線狀態回報到狀態提示
       boxOf(),
@@ -93,7 +94,7 @@ export function AisLayer({ map }: { map: L.Map }) {
       useTacticalStore.getState().setAisDiag(null)
       // 測到一半離開 AIS：不清掉的話回來時按鈕會一直卡在「測試中」
       useTacticalStore.getState().setAisKeyTest({ running: false, text: '' })
-      group.clearLayers()
+      markers.clear()
       map.removeLayer(group)
       groupRef.current = null
       // 注意：不清空 store 的 vessels——保留最後已知 AIS，供光學亮點掃描做
@@ -176,45 +177,4 @@ export function AisLayer({ map }: { map: L.Map }) {
   }, [mode, showRadarVessels, configRev, sentinelCheck])
 
   return null
-}
-
-function drawVessel(
-  group: L.LayerGroup,
-  v: Vessel,
-  toTool: (v: Vessel, tool: 'intercept' | 'dr') => void,
-) {
-  const { alerts, level } = analyzeVessel(v)
-  const color = level === 'alert' ? '#f43f5e' : level === 'warn' ? '#f59e0b' : '#22d3ee'
-  const pulse = level === 'alert' ? ' ais-alert' : ''
-  const marker = L.marker([v.lat, v.lng], {
-    icon: L.divIcon({
-      className: '',
-      html: `<div class="ais-vessel${pulse}" style="transform:rotate(${v.cog}deg);color:${color}">▲</div>`,
-      iconSize: [22, 22],
-      iconAnchor: [11, 11],
-    }),
-  })
-  const alertHtml = alerts.length
-    ? `<br/><span style="color:${color}">⚠ ${alerts.join('、')}</span>`
-    : ''
-  // 用 DOM 元素當 popup，才能掛按鈕點擊事件（字串 HTML 無法綁 onclick）。
-  const el = document.createElement('div')
-  el.style.cssText = 'font-family:ui-monospace,monospace;line-height:1.5'
-  el.innerHTML = `<b style="color:${color}">${v.name}</b><br/>
-    MMSI ${v.mmsi}<br/>船種：${v.type}<br/>
-    航速 ${v.sog.toFixed(1)} kn · 航向 ${Math.round(v.cog)}°${alertHtml}`
-  const btnRow = document.createElement('div')
-  btnRow.style.cssText = 'display:flex;gap:6px;margin-top:6px'
-  const mkBtn = (label: string, tool: 'intercept' | 'dr', bg: string) => {
-    const b = document.createElement('button')
-    b.textContent = label
-    b.style.cssText = `flex:1;padding:4px 6px;border-radius:6px;border:1px solid ${bg};background:${bg}22;color:${bg};font-weight:700;font-size:12px;cursor:pointer`
-    b.onclick = () => toTool(v, tool)
-    return b
-  }
-  btnRow.appendChild(mkBtn('🎯 攔截', 'intercept', '#22d3ee'))
-  btnRow.appendChild(mkBtn('🧭 推算', 'dr', '#38bdf8'))
-  el.appendChild(btnRow)
-  marker.bindPopup(el)
-  marker.addTo(group)
 }

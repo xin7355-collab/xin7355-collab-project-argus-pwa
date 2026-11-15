@@ -5,21 +5,10 @@
 //
 // 介面用 subscribe(callback) 回傳「取消訂閱」函式，方便圖層卸載時徹底停掉
 // （關掉 WebSocket / 清 interval），符合本專案的防爆原則。
-
-export interface Vessel {
-  mmsi: string
-  name: string
-  lat: number
-  lng: number
-  /** 航向（度） */
-  cog: number
-  /** 航速（節 kn） */
-  sog: number
-  /** 船種（漁船/貨船/油輪…） */
-  type: string
-}
+// 船位怎麼存、怎麼清洗、何時過期，見 aisStore.ts。
 
 import { getConfig, isAisConfigured } from './config'
+import { AisStore, SUBSCRIBE_TYPES, advance, type BBox, type TrackPoint, type Vessel } from './aisStore'
 import { backoffMs, evaluateWatchdog, initialWatchdogState, isAuthFailure, type AisHealth } from './aisWatchdog'
 import {
   chooseRoute,
@@ -35,6 +24,7 @@ import {
 } from './aisRoute'
 
 export { isAisConfigured }
+export type { BBox, TrackPoint, Vessel }
 
 type Listener = (vessels: Vessel[]) => void
 type StatusListener = (status: string) => void
@@ -46,12 +36,12 @@ type StatusListener = (status: string) => void
 type FreshListener = (usable: boolean, ageMs: number | null) => void
 /** 每條連線結束時回報：診斷結論 + 最近幾次連線紀錄（面板顯示用）。 */
 type DiagListener = (diag: Diagnosis, history: ConnAttempt[]) => void
-/** AISStream 邊界框：[[南緯,西經],[北緯,東經]]。 */
-export type BBox = [[number, number], [number, number]]
 /** 訂閱控制代把手：停止 + 動態更新訂閱範圍（跟著地圖視野）。 */
 export interface AisHandle {
   stop: () => void
   setBox: (box: BBox) => void
+  /** 某艘船最近的航跡（舊到新）。 */
+  track: (mmsi: string) => TrackPoint[]
   /** 借英吉利海峽收 15 秒，分出「金鑰壞」還是「這片海沒資料」。回傳給人看的結論。 */
   testKey: () => Promise<string>
 }
@@ -72,23 +62,15 @@ function capBox(box: BBox, maxSpan = 40): BBox {
   return [[s, w], [nn, e]]
 }
 
-/** 船是否在框內（含小邊界）。 */
-function inBox(v: Vessel, box: BBox): boolean {
-  const [[s, w], [nn, e]] = box
-  return v.lat >= s - 0.5 && v.lat <= nn + 0.5 && v.lng >= w - 0.5 && v.lng <= e + 0.5
-}
-
 /** 台灣周邊模擬船隻。 */
-const SIM_FLEET: Vessel[] = [
+const SIM_FLEET: Array<Pick<Vessel, 'mmsi' | 'name' | 'lat' | 'lng' | 'type'> & { cog: number; sog: number }> = [
   { mmsi: '416001001', name: 'HAI HUNG', lat: 24.9, lng: 121.9, cog: 210, sog: 11, type: '貨船' },
   { mmsi: '416002002', name: 'FU YUAN 66', lat: 24.2, lng: 121.6, cog: 340, sog: 6, type: '漁船' },
-  { mmsi: '477553000', name: 'COSCO STAR', lat: 25.3, lng: 122.4, cog: 260, sog: 15, type: '貨櫃輪' },
+  { mmsi: '477553000', name: 'COSCO STAR', lat: 25.3, lng: 122.4, cog: 260, sog: 15, type: '貨船' },
   { mmsi: '416003003', name: 'SHENG LI', lat: 23.8, lng: 121.3, cog: 30, sog: 9, type: '油輪' },
   { mmsi: '416004004', name: '(無船名)', lat: 24.6, lng: 122.2, cog: 150, sog: 4, type: '不明' },
   { mmsi: '416005005', name: 'DA CHANG', lat: 25.0, lng: 121.4, cog: 300, sog: 12, type: '漁船' },
 ]
-
-const DEG = Math.PI / 180
 
 /**
  * 訂閱 AIS。回傳 { stop, setBox }：setBox 可隨地圖視野更新訂閱範圍，
@@ -111,25 +93,21 @@ export function subscribeAIS(
 
 /** 模擬：每 2 秒依航向/航速推進船位。 */
 function subscribeSim(onUpdate: Listener): AisHandle {
-  const fleet: Vessel[] = SIM_FLEET.map((v) => ({ ...v }))
+  const fleet = SIM_FLEET.map((v) => ({ ...v }))
   const step = () => {
     for (const v of fleet) {
-      // 1 節 ≈ 0.5144 m/s；2 秒位移；換算成經緯度
-      const dist = v.sog * 0.5144 * 2
-      const dNorth = dist * Math.cos(v.cog * DEG)
-      const dEast = dist * Math.sin(v.cog * DEG)
-      v.lat += (dNorth / 6371000) / DEG
-      v.lng += (dEast / (6371000 * Math.cos(v.lat * DEG))) / DEG
+      ;[v.lat, v.lng] = advance(v.lat, v.lng, v.cog, v.sog, 2)
       // 偶爾微調航向，看起來自然些（用 mmsi 尾數當偽隨機，避免用 Math.random）
       v.cog = (v.cog + ((Number(v.mmsi) % 7) - 3) * 0.5 + 360) % 360
     }
-    onUpdate(fleet.map((v) => ({ ...v })))
+    onUpdate(fleet.map((v) => ({ ...v, heading: null, kind: 'ship' as const, ageSec: 0 })))
   }
   step()
   const timer = setInterval(step, 2000)
   return {
     stop: () => clearInterval(timer),
     setBox: () => {},
+    track: () => [],
     testKey: async () => '目前是模擬船隻，沒有金鑰可測。先到 ⚙️ 設定填 AISStream 金鑰。',
   }
 }
@@ -157,7 +135,7 @@ function subscribeReal(
   onFresh?: FreshListener,
   onDiag?: DiagListener,
 ): AisHandle {
-  const byMmsi = new Map<string, Vessel>()
+  const store = new AisStore()
   let ws: WebSocket | null = null
   let closedByUs = false
   let testing = false
@@ -184,9 +162,36 @@ function subscribeReal(
     JSON.stringify({
       APIKey: key,
       BoundingBoxes: [box],
-      FilterMessageTypes: ['PositionReport', 'ShipStaticData'],
+      FilterMessageTypes: SUBSCRIBE_TYPES,
     })
-  const emit = () => onUpdate([...byMmsi.values()].filter((v) => inBox(v, curBox)))
+
+  // ── 畫面更新節流 ──
+  // 以前每收到一筆 AIS 就把整批船交給圖層、圖層全部砍掉重畫：船一多，iPhone 發燙又卡。
+  // 改成最多每秒一次；App 切到背景時不畫（回到前景補一次）；
+  // 另外每 5 秒刷新一次，讓推算位置往前走、讓過期的船消失。
+  const EMIT_MIN_MS = 1000
+  let lastEmit = -Infinity
+  let emitTimer: ReturnType<typeof setTimeout> | null = null
+  const hidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
+  const emitNow = () => {
+    emitTimer = null
+    if (closedByUs || hidden()) return
+    const now = mono()
+    lastEmit = now
+    store.prune(now, curBox)
+    onUpdate(store.snapshot(now, curBox))
+  }
+  const scheduleEmit = () => {
+    if (emitTimer || closedByUs) return
+    emitTimer = setTimeout(emitNow, Math.max(0, EMIT_MIN_MS - (mono() - lastEmit)))
+  }
+  const refreshTimer = setInterval(() => {
+    if (store.size > 0) scheduleEmit()
+  }, 5000)
+  const onVisible = () => {
+    if (!hidden()) scheduleEmit()
+  }
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible)
 
   /** 一條連線結束：記下來、重新診斷。回傳診斷結論。 */
   const record = (code: number, reason: string): Diagnosis => {
@@ -284,60 +289,39 @@ function subscribeReal(
           }
           return
         }
-        const type = msg?.MessageType
-        const meta = msg?.MetaData
-        // 非船位訊息（多為伺服器提示/錯誤）：把原文攤開，最有助於排查。
-        if (!meta) {
+        if (msg?.MessageType === 'SubscriptionConfirmation') {
+          if (!gotAny) status('AIS：訂閱成功，等船回報…（每艘船隔數秒到數分鐘回報一次）')
+          return
+        }
+        // 這裡才是「真的有資料」（aisStore 認得的 AIS 訊息才算）。看門狗與退避都以這個時間為準，
+        // 不以握手成功為準——握手成功後長期沉默正是要抓的那種故障。
+        if (!store.ingest(msg, mono())) {
+          // 認不得的訊息：第一次把原文攤開，最有助於排查
           if (!gotAny) {
             const raw = text.slice(0, 160)
             if (raw) status(`AIS：伺服器回應非船位訊息——${raw}`)
           }
           return
         }
-        const mmsi = String(meta.MMSI ?? meta.mmsi ?? '')
-        if (!mmsi) return
-        // 這裡才是「真的有資料」。看門狗與退避都以這個時間為準，
-        // 不以握手成功為準——握手成功後長期沉默正是要抓的那種故障。
         wd.lastDataAt = mono()
         wd.authBlocked = false
         badKey = false
         attempt = 0
+        // 資料一到就回報「可信」，不等 20 秒一次的心跳：以前開頭 20 秒地圖上方一直寫「尚未收到更新」
+        if (lastHealth !== 'live') {
+          const fresh = evaluateWatchdog(wd, mono())
+          lastHealth = fresh.health
+          onFresh?.(fresh.usable, fresh.ageMs)
+        }
         // 第一筆資料就告訴面板「通了」，不用等這條連線結束才更新診斷。
         if (msgsThisConn++ === 0) onDiag?.({ verdict: 'ok', text: `連線正常（${ROUTE_NAME[route]}）。` }, history)
-        const prev = byMmsi.get(mmsi)
-
-        if (type === 'PositionReport') {
-          const pr = msg?.Message?.PositionReport
-          if (!pr) return
-          const lat = pr.Latitude ?? meta.latitude
-          const lng = pr.Longitude ?? meta.longitude
-          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
-          byMmsi.set(mmsi, {
-            mmsi,
-            name: prev?.name || (meta.ShipName || '(無船名)').trim(),
-            lat,
-            lng,
-            cog: pr.Cog ?? prev?.cog ?? 0,
-            sog: pr.Sog ?? prev?.sog ?? 0,
-            type: prev?.type || '—',
-          })
-        } else if (type === 'ShipStaticData') {
-          const sd = msg?.Message?.ShipStaticData
-          if (!sd || !prev) return
-          byMmsi.set(mmsi, {
-            ...prev,
-            name: (sd.Name || meta.ShipName || prev.name).trim(),
-            type: shipTypeText(sd.Type) || prev.type,
-          })
-        } else return
-
         if (!gotAny) {
           gotAny = true
           if (noDataTimer) clearTimeout(noDataTimer)
+          // 只在「開始有資料」時出聲；船數看 AIS 面板。以前每筆都更新提示，底部提示一直跳。
+          status('AIS：開始收到即時船位（aisstream.io · 移動地圖看其他海域）')
         }
-        const shown = [...byMmsi.values()].filter((v) => inBox(v, curBox))
-        status(`AIS：畫面內即時船位 ${shown.length} 艘（aisstream.io · 移動地圖看其他海域）`)
-        onUpdate(shown)
+        scheduleEmit()
       } catch {
         /* 忽略單筆解析錯誤 */
       }
@@ -412,6 +396,9 @@ function subscribeReal(
       if (reconnectTimer) clearTimeout(reconnectTimer)
       if (noDataTimer) clearTimeout(noDataTimer)
       if (heartbeat) clearInterval(heartbeat)
+      if (emitTimer) clearTimeout(emitTimer)
+      clearInterval(refreshTimer)
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible)
       detach()
     },
     // 更新訂閱範圍（地圖移動時呼叫）：重送訂閱訊息、清掉離開視野的舊船。
@@ -424,10 +411,12 @@ function subscribeReal(
           /* 送不出去就等下次重連時套用 */
         }
       }
-      // 修剪掉離目前視野太遠的船（避免累積成滿圖殘影）。
-      for (const [mmsi, v] of byMmsi) if (!inBox(v, curBox)) byMmsi.delete(mmsi)
-      emit()
+      // 離開視野太遠的船清掉（不會再更新，留著會變成滿圖殘影）；畫面馬上跟上，不等節流
+      store.prune(mono(), curBox)
+      if (emitTimer) clearTimeout(emitTimer)
+      emitNow()
     },
+    track: (mmsi: string) => store.track(mmsi),
     testKey: async () => {
       if (testing) return '測試進行中…'
       // 先停掉正式連線：免費金鑰同時開兩條可能互相擠掉，測出來會不準。
@@ -461,17 +450,4 @@ function subscribeReal(
       }
     },
   }
-}
-
-/** AIS 船種代碼→中文（簡化）。 */
-function shipTypeText(t: unknown): string {
-  const n = typeof t === 'number' ? t : parseInt(String(t), 10)
-  if (!Number.isFinite(n)) return ''
-  if (n >= 30 && n <= 30) return '漁船'
-  if (n >= 60 && n <= 69) return '客船'
-  if (n >= 70 && n <= 79) return '貨船'
-  if (n >= 80 && n <= 89) return '油輪/化學船'
-  if (n >= 40 && n <= 49) return '高速船'
-  if (n >= 50 && n <= 59) return '特種船'
-  return '其他'
 }

@@ -342,7 +342,8 @@ interface TacticalState {
     point: { lat: number; lng: number }
   } | null
   /** 從地圖上點船「攔截／推算此船」時，把船的位置與航向航速帶進對應面板。 */
-  targetPrefill: { lat: number; lng: number; cog: number; sog: number; name: string } | null
+  /** 航向／航速沒回報（AIS 的 360／102.3）時是 null，面板要請使用者手動填。 */
+  targetPrefill: { lat: number; lng: number; cog: number | null; sog: number | null; name: string } | null
 
   // ── 座標管理：已存(最愛/釘選) + 歷史（localStorage 持久化）──
   savedCoords: SavedCoord[]
@@ -437,9 +438,7 @@ interface TacticalState {
       point: { lat: number; lng: number }
     } | null,
   ) => void
-  setTargetPrefill: (
-    p: { lat: number; lng: number; cog: number; sog: number; name: string } | null,
-  ) => void
+  setTargetPrefill: (p: TacticalState['targetPrefill']) => void
   setOpenTool: (id: string | null) => void
   setUiScale: (v: number) => void
   setDistUnit: (v: DistUnit) => void

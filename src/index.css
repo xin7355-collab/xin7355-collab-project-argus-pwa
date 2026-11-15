@@ -416,6 +416,15 @@ html.sheet-tall .leaflet-bottom {
 .ais-vessel.ais-alert {
   animation: pulse-alert 0.8s ease-in-out infinite;
 }
+/* 太久沒回報：位置可能過時，變淡 */
+.ais-vessel.ais-stale {
+  opacity: 0.45;
+}
+/* 航標（浮標、燈塔）：小一點，不跟船搶 */
+.ais-vessel.ais-aton {
+  font-size: 12px;
+  text-shadow: none;
+}
 
 /* 落海點標記（紅色脈動十字） */
 .mob-marker {
