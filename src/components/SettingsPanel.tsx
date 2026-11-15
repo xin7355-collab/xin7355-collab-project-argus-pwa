@@ -6,6 +6,7 @@ import {
   isCwaConfigured,
   isEdgeAiConfigured,
   isSentinelConfigured,
+  newAiToken,
 } from '../lib/config'
 import { fetchCwaJson } from '../lib/cwa'
 import { downloadBackup, restoreBackup } from '../lib/backup'
@@ -292,18 +293,12 @@ export function SettingsPanel() {
               placeholder="CWA-XXXXXXXX-... 或 rdec-key-..."
             />
 
-            {/* 關鍵說明：手機瀏覽器直連 CWA 幾乎都被 CORS 擋，必須靠 Worker 代理 */}
-            {isCwaConfigured() && !cfg.edgeAiUrl && (
-              <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-2 text-[0.6875rem] leading-relaxed text-amber-100">
-                <b className="text-amber-300">⚠ 只填授權碼還不夠。</b>
-                手機/瀏覽器直連 CWA 幾乎都會被 <b>CORS 擋掉</b>，所以官方颱風路徑抓不到、會退回 GDACS
-                觀測軌跡（英文名、無預報）。<b>原生 App（像你另一支）沒有這個限制，才拿得到白海豚＋預報。</b>
-                <br />解法：部署 <b>Cloudflare Worker</b>（免費）當代理，把網址填到上面「🤖 邊緣 AI Worker 網址」：
-                <br />① 到 cloudflare.com 免費註冊 → Workers &amp; Pages → Create → 貼上專案 <code className="text-tactical-cyan">cloudflare/worker.js</code>
-                <br />② 部署後拿到 <code className="text-tactical-cyan">https://xxx.workers.dev</code> → 填到上面 Worker 欄
-                <br />③ 回颱風模式即會自動改用 CWA 官方路徑（中文名＋預報＋侵襲機率）
-                <br />填好後按下方「🔌 測試 CWA 連線」確認。
-              </div>
+            {/* 2.45 起授權碼經本站 Worker（/api/cwa）轉給氣象署，不用再自己架 Worker */}
+            {isCwaConfigured() && (
+              <p className="-mt-1.5 mb-2 text-[0.625rem] leading-relaxed text-slate-400">
+                授權碼會經本站的伺服器轉給氣象署（放在標頭，不放網址），不用自己另外架 Worker。
+                填好按下方「🔌 測試 CWA 連線」確認。
+              </p>
             )}
 
             {isCwaConfigured() && <CwaProbe />}
@@ -378,6 +373,60 @@ export function SettingsPanel() {
                   </p>
                 </div>
               )}
+            </div>
+
+            {/* 語音助理：通行碼要跟 GitHub Secrets 的 AI_ACCESS_TOKEN 一樣；設定步驟寫在這裡，手機上照著點 */}
+            <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/40 p-2">
+              <div className="mb-1 text-[0.6875rem] font-semibold text-tactical-green">🎙️ 語音助理</div>
+              <div className="flex items-end gap-1.5">
+                <div className="min-w-0 flex-1">
+                  <Field
+                    label="通行碼"
+                    hint="跟 GitHub Secrets 的 AI_ACCESS_TOKEN 填同一組；擋別人用掉你的 AI 額度"
+                    value={cfg.aiToken}
+                    onChange={(v) => setCfg({ ...cfg, aiToken: v })}
+                    placeholder="按右邊「產生」"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    const t = newAiToken()
+                    setCfg({ ...cfg, aiToken: t })
+                    navigator.clipboard
+                      ?.writeText(t)
+                      .then(() => setStatus('通行碼已產生並複製：貼到 GitHub Secrets 的 AI_ACCESS_TOKEN，再按下面「儲存並套用」'))
+                      .catch(() => setStatus('通行碼已產生：請手動複製欄位裡那串，貼到 GitHub Secrets 的 AI_ACCESS_TOKEN'))
+                  }}
+                  className="mb-3 shrink-0 rounded border border-tactical-cyan/60 px-2 py-1.5 text-[0.625rem] font-semibold text-tactical-cyan active:scale-95"
+                >
+                  產生
+                </button>
+              </div>
+              <details className="text-[0.625rem] leading-relaxed text-slate-300">
+                <summary className="cursor-pointer font-semibold text-tactical-cyan">怎麼開？（約 10 分鐘，用免費的 Groq）</summary>
+                <ol className="mt-1.5 flex list-decimal flex-col gap-1 pl-4 text-slate-400">
+                  <li>
+                    到 <span className="font-mono text-tactical-cyan">console.groq.com/keys</span> 登入（可用 Google 帳號）→ Create API Key → 複製（只顯示一次）
+                  </li>
+                  <li>
+                    開 <span className="break-all font-mono text-tactical-cyan">github.com/xin7355-collab/xin7355-collab-project-argus-pwa/settings/secrets/actions</span> →
+                    New repository secret：名稱 <b className="text-slate-200">GROQ_API_KEY</b>，內容貼剛剛那串
+                  </li>
+                  <li>
+                    按上面「產生」→ 再新增一個 secret：名稱 <b className="text-slate-200">AI_ACCESS_TOKEN</b>，內容貼通行碼 → 回來按「儲存並套用」
+                  </li>
+                  <li>
+                    開 <span className="break-all font-mono text-tactical-cyan">github.com/xin7355-collab/xin7355-collab-project-argus-pwa/actions/workflows/deploy.yml</span> →
+                    Run workflow（把金鑰送到伺服器；之後改了 secret 也要再跑一次）
+                  </li>
+                  <li>功能清單 →「🎙️ 語音助理」</li>
+                </ol>
+                <p className="mt-1 text-slate-500">
+                  選用：再加 <b>GEMINI_API_KEY</b>（<span className="font-mono">aistudio.google.com/apikey</span>，免費）當備援；
+                  <b>ANTHROPIC_API_KEY</b>（Claude）是<b className="text-amber-300">付費</b>的，加之前先到 <span className="font-mono">platform.claude.com</span> 的帳單設定設每月預算上限。
+                  順序是免費的先用，都不行才用付費的。
+                </p>
+              </details>
             </div>
 
             {/* 給 Claude 用的 MCP 連接器：網址要能一鍵複製，iPhone 上手打很容易打錯 */}

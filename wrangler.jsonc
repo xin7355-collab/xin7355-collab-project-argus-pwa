@@ -11,6 +11,12 @@
   // 沒有 TLE 就算不出衛星地面軌跡。其餘路徑仍交給靜態資源，行為不變。
   "main": "worker/index.js",
   "compatibility_date": "2025-06-01",
+  // AI 模型路由（worker/vendor/model_router.cjs，skl 原樣複製）的自我測試用到 fs／path，
+  // 只在 Node 跑；Worker 打包時換成空模組，不然找不到這兩個模組會整個打包失敗。
+  "alias": {
+    "fs": "./worker/vendor/node-stub.js",
+    "path": "./worker/vendor/node-stub.js"
+  },
   // 明確開啟 workers.dev 公開網址（部署後為 argus-app.<你的子網域>.workers.dev）。
   // 雖然這是預設值，但寫出來才不會出現「部署成功卻沒有網址可開」而查不到原因。
   // 之後若要綁自訂網域或改走 Access 鎖，再另外設 routes。

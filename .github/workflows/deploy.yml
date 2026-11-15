@@ -165,6 +165,52 @@ jobs:
           url="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1 || true)"
           echo "DEPLOY_URL=$url" >> "$GITHUB_ENV"
 
+      # 語音助理（/api/ai）用的金鑰要變成 Worker 的 secret，瀏覽器才拿不到。
+      # 只送 GitHub Secrets 裡「有設的」；一個都沒設就跳過、不算失敗（App 會安靜顯示「還沒設定」）。
+      # 值一律不印：先 add-mask，寫進只有本步驟看得到的暫存檔，送完就刪。
+      - name: 同步 AI 金鑰到 Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ env.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CF_ACCOUNT_ID }}
+          S_GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          S_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          S_OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          S_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          S_AI_ACCESS_TOKEN: ${{ secrets.AI_ACCESS_TOKEN }}
+        run: |
+          umask 077
+          f="$RUNNER_TEMP/ai-secrets.json"
+          # 手機複製常夾帶空白、換行：清掉再送（多把金鑰用逗號分隔，逗號保留）
+          node -e '
+            const names = ["GROQ_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "AI_ACCESS_TOKEN"];
+            const out = {};
+            for (const n of names) {
+              const v = (process.env["S_" + n] || "").replace(/\s+/g, "");
+              if (v) { out[n] = v; console.log("::add-mask::" + v); }
+            }
+            require("fs").writeFileSync(process.argv[1], JSON.stringify(out));
+            console.log("要同步的：" + (Object.keys(out).join("、") || "（沒有）"));  // guardrails: ignore（印的是名稱，不是值）
+          ' "$f"
+          if [ "$(cat "$f")" = "{}" ]; then
+            echo "還沒設定語音助理的金鑰（GROQ_API_KEY 等），跳過。這不是錯誤；要用時照 ⚙️ 設定 → 🎙️ 語音助理的步驟加。"
+            rm -f "$f"
+            exit 0
+          fi
+          if ! grep -q '"AI_ACCESS_TOKEN"' "$f"; then
+            echo "::warning::有 AI 金鑰但沒有 AI_ACCESS_TOKEN：語音助理會回「還沒設定」。到 ⚙️ 設定 → 🎙️ 語音助理按「產生」，再加到 GitHub Secrets。"
+          fi
+          set +e
+          npx wrangler secret bulk "$f" > secret.log 2>&1
+          code=$?
+          set -e
+          rm -f "$f"
+          # wrangler 的輸出只有名稱與成功與否；保險起見只印最後幾行
+          tail -n 5 secret.log
+          if [ $code -ne 0 ]; then
+            echo "::error::AI 金鑰送不上 Worker。多半是 CLOUDFLARE_API_TOKEN 權限不夠：Cloudflare 後台 → My Profile → API Tokens，確認有 Workers Scripts 的 Edit 權限"
+            exit 1
+          fi
+
       # 把網址印在 Actions 的 Summary 頁，部署完直接點就能開，
       # 不用再去 Cloudflare 後台翻。
       - name: 顯示部署網址

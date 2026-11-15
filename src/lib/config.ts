@@ -12,6 +12,11 @@ export interface RuntimeConfig {
   aisKey: string
   /** 中央氣象署 (CWA) Open Data 授權碼。經 Worker 代理使用（CWA 無 CORS）。 */
   cwaKey: string
+  /**
+   * 語音助理通行碼：跟 GitHub Secrets 的 AI_ACCESS_TOKEN 同一組，擋別人用掉你的 AI 額度。
+   * 只存在這支手機，不從 VITE_* 打包（網站是公開的，打包進 JS 等於公開）。
+   */
+  aiToken: string
 }
 
 import { cleanKey } from './keyText'
@@ -54,6 +59,7 @@ export function getConfig(): RuntimeConfig {
     edgeAiUrl: normUrl(ls.edgeAiUrl || ENV.edgeAiUrl),
     aisKey: cleanKey(ls.aisKey) || ENV.aisKey,
     cwaKey: ls.cwaKey?.trim() || ENV.cwaKey,
+    aiToken: cleanKey(ls.aiToken),
   }
 }
 
@@ -73,3 +79,10 @@ export const isEdgeAiConfigured = () => Boolean(getConfig().edgeAiUrl)
 export const isAisConfigured = () => Boolean(getConfig().aisKey)
 /** CWA 只要有授權碼即可（先試瀏覽器直連；直連被擋才需 Worker）。 */
 export const isCwaConfigured = () => Boolean(getConfig().cwaKey)
+export const isAssistantConfigured = () => Boolean(getConfig().aiToken)
+
+/** 產生一組語音助理通行碼（24 個網址安全字元，約 144 位元隨機）。 */
+export function newAiToken(): string {
+  const b = crypto.getRandomValues(new Uint8Array(18))
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_')
+}

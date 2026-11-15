@@ -26,6 +26,7 @@ import { useTacticalStore } from './store/tacticalStore'
 import { useSentinelCheck } from './components/useSentinelCheck'
 import { useShareLink } from './components/useShareLink'
 import { GlobeAsk } from './components/GlobeAsk'
+import { AssistantPanel } from './components/AssistantPanel'
 
 // 3D 地球整個延遲載入：沒按「🌐 3D 地球」的人（大多數手機使用者）一個位元組都不用下載
 const GlobeView = lazy(() => import('./globe/GlobeView'))
@@ -72,6 +73,7 @@ export default function App() {
       <SecureUnlock />
       <Dashboard />
       <GlobeAsk />
+      <AssistantPanel />
       {globeOpen && (
         <Suspense
           fallback={
