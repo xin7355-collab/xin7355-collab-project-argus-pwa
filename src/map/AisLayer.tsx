@@ -2,9 +2,16 @@ import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import { useTacticalStore } from '../store/tacticalStore'
 import { subscribeAIS, isAisConfigured, type AisHandle, type Vessel, type BBox } from '../lib/ais'
-import { VesselMarkers } from './aisMarkers'
+import { VesselMarkers, type VesselAction } from './aisMarkers'
+import { buildShareUrl, shareUrl } from '../lib/shareLink'
 import { buildGibsBoatLights } from '../lib/gibs'
 import { buildWmsConfig, isSentinelConfigured, layerFor } from '../lib/sentinel'
+
+/**
+ * 要找的船（分享連結、搜尋列）最多等多久。AIS 每艘船回報間隔從 2 秒（快速航行）到 3 分鐘（Class B 停泊）
+ * 都有，再加上連線建立的時間，3 分鐘還沒看到就說一聲。
+ */
+const FOCUS_WAIT_MS = 3 * 60_000
 
 /** 前一天日期（YYYY-MM-DD）——夜間漁火/雷達影像用最近可用日最保險。 */
 function yesterdayYmd(): string {
@@ -30,6 +37,7 @@ export function AisLayer({ map }: { map: L.Map }) {
   const radarRef = useRef<L.TileLayer | null>(null)
   const handleRef = useRef<AisHandle | null>(null)
   const keyTestTick = useTacticalStore((s) => s.aisKeyTestTick)
+  const focusMmsi = useTacticalStore((s) => s.focusMmsi)
 
   useEffect(() => {
     if (mode !== 'ais') return
@@ -44,13 +52,28 @@ export function AisLayer({ map }: { map: L.Map }) {
 
     // 進 AIS 若地圖放太大（看不到船），縮到「目前位置周邊」而非硬跳台灣，
     // 這樣使用者在哪裡就看哪裡的船（訂閱框跟著視野走）。
-    if (map.getZoom() > 9) map.setZoom(8)
+    // 但如果剛有明確要飛去的地方（分享連結、搜尋），以那個為準：
+    // 這裡比 MapFlyTo 先執行，這時縮放會把飛行動畫打斷、停在半路。
+    if (map.getZoom() > 9 && !useTacticalStore.getState().flyToTarget) map.setZoom(8)
 
     // 點船「攔截／推算此船」：把船位與 COG/SOG 帶進對應面板（免手打）。
+    // 「分享」：組連結交給手機分享選單；要在點擊當下呼叫（iOS 要求使用者手勢），中間不 await。
     const store = useTacticalStore.getState()
-    const toTool = (v: Vessel, tool: 'intercept' | 'dr') => {
+    const onAction = (v: Vessel, action: VesselAction) => {
+      if (action === 'share') {
+        const url = buildShareUrl(window.location.href, {
+          lat: v.lat,
+          lng: v.lng,
+          zoom: Math.max(map.getZoom(), 10),
+          mode: 'ais',
+          mmsi: v.mmsi,
+          base: useTacticalStore.getState().baseLayer,
+        })
+        void shareUrl(url).then((msg) => setStatus(msg))
+        return
+      }
       store.setTargetPrefill({ lat: v.lat, lng: v.lng, cog: v.cog, sog: v.sog, name: v.name })
-      store.setOpenTool(tool)
+      store.setOpenTool(action)
       map.closePopup()
     }
 
@@ -64,11 +87,17 @@ export function AisLayer({ map }: { map: L.Map }) {
     }
 
     // 航跡要向連線把手要；把手在 subscribeAIS 回來之後才有，所以先用 ref 包一層
-    const markers = new VesselMarkers(group, toTool, (mmsi) => handleRef.current?.track(mmsi) ?? [])
+    const markers = new VesselMarkers(group, onAction, (mmsi) => handleRef.current?.track(mmsi) ?? [])
     const handle = subscribeAIS(
       (vessels) => {
         setVessels(vessels)
         markers.update(vessels)
+        // 分享連結指定的船：一出現就打開它的資訊，然後不再找
+        const f = useTacticalStore.getState().focusMmsi
+        if (f && markers.open(f)) {
+          useTacticalStore.getState().setFocusMmsi(null)
+          setStatus(`已找到要找的船（MMSI ${f}）`)
+        }
       },
       (s) => setStatus(s), // 連線狀態回報到狀態提示
       boxOf(),
@@ -102,6 +131,27 @@ export function AisLayer({ map }: { map: L.Map }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, configRev])
+
+  // ── 🔗 要找的船（分享連結、搜尋列）：等它回報，等不到要講，不要一直顯示「等待中」 ──
+  useEffect(() => {
+    if (mode !== 'ais' || !focusMmsi) return
+    // 模擬模式的船一進來就有：5 秒還沒有就是找不到，不必等 3 分鐘
+    const live = isAisConfigured()
+    const t = setTimeout(
+      () => {
+        const now = useTacticalStore.getState()
+        if (now.focusMmsi !== focusMmsi) return
+        now.setFocusMmsi(null)
+        now.setStatus(
+          live
+            ? `⚠ 要找的船（MMSI ${focusMmsi}）${FOCUS_WAIT_MS / 60000} 分鐘內在這片海域都沒有回報：可能已駛出畫面、關了 AIS，或附近收不到。`
+            : `要找的船（MMSI ${focusMmsi}）要接真實 AIS 才看得到：⚙️ 設定填 AISStream 金鑰。現在畫面上是模擬船。`,
+        )
+      },
+      live ? FOCUS_WAIT_MS : 5000,
+    )
+    return () => clearTimeout(t)
+  }, [mode, focusMmsi])
 
   // ── 🔑 測試金鑰：面板按鈕只遞增 tick，連線把手在這裡，所以由這裡跑 ──
   useEffect(() => {

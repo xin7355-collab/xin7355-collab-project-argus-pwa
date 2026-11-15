@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { snapHeights, nearestSnap, tapCycle, FLICK_SPEED } from './sheet.ts'
+import { snapHeights, nearestSnap, tapCycle, pullDecision, FLICK_SPEED } from './sheet.ts'
 
 // iPhone 14/15 的可用高度約 844，標題列（含安全區）約 120
 const HS = snapHeights(844, 120, 76)
@@ -46,4 +46,14 @@ test('點把手的循環', () => {
   assert.equal(tapCycle('peek'), 'half')
   assert.equal(tapCycle('half'), 'full')
   assert.equal(tapCycle('full'), 'half')
+})
+
+test('內容區往下拉：清單在最上面、往下、偏垂直才接手拖抽屜', () => {
+  assert.equal(pullDecision(true, 0, 0), 'wait', '還沒動，先不決定')
+  assert.equal(pullDecision(true, 1, 3), 'claim')
+  assert.equal(pullDecision(true, 0, 1), 'claim', '第一下只動 1px 也要能決定（iOS 開始捲動後就擋不住）')
+  assert.equal(pullDecision(false, 0, 8), 'native', '清單還沒捲到頂：照常捲清單')
+  assert.equal(pullDecision(true, 0, -6), 'native', '往上：捲清單')
+  assert.equal(pullDecision(true, 8, 4), 'native', '偏水平：留給左右滑的元件')
+  assert.equal(pullDecision(true, -4, 5), 'native', '斜 45 度附近不接手，寧可不搶')
 })

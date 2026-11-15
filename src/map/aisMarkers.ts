@@ -16,7 +16,8 @@ import { ageText, bowDeg, cogText, sogText, type TrackPoint, type Vessel } from 
 /** 多久沒回報就把圖示變淡（位置可能已經過時）。 */
 const STALE_FADE_SEC = 600
 
-type Tool = 'intercept' | 'dr'
+/** 彈出視窗上的按鈕：帶進攔截／推算面板，或分享這艘船。 */
+export type VesselAction = 'intercept' | 'dr' | 'share'
 
 interface Entry {
   marker: L.Marker
@@ -67,7 +68,7 @@ function line(parent: HTMLElement, text: string, color?: string): HTMLElement {
   return d
 }
 
-function popupOf(v: Vessel, look: Look & { alerts: string[] }, onTool: (v: Vessel, t: Tool) => void): HTMLElement {
+function popupOf(v: Vessel, look: Look & { alerts: string[] }, onAction: (v: Vessel, a: VesselAction) => void): HTMLElement {
   const el = document.createElement('div')
   el.style.cssText = 'font-family:ui-monospace,monospace;line-height:1.5'
   const title = line(el, v.name, look.color)
@@ -88,15 +89,17 @@ function popupOf(v: Vessel, look: Look & { alerts: string[] }, onTool: (v: Vesse
   if (v.kind === 'ship') {
     const row = document.createElement('div')
     row.style.cssText = 'display:flex;gap:6px;margin-top:6px'
-    const btn = (label: string, tool: Tool, c: string) => {
+    const btn = (label: string, action: VesselAction, c: string) => {
       const b = document.createElement('button')
       b.textContent = label
-      b.style.cssText = `flex:1;padding:6px;border-radius:6px;border:1px solid ${c};background:${c}22;color:${c};font-weight:700;font-size:12px;cursor:pointer`
-      b.onclick = () => onTool(v, tool)
+      // 高 36px：海上搖晃時手指點得到（原本 6px 內距約 28px 高，常點歪）
+      b.style.cssText = `flex:1;min-height:36px;padding:6px 4px;border-radius:6px;border:1px solid ${c};background:${c}22;color:${c};font-weight:700;font-size:12px;cursor:pointer`
+      b.onclick = () => onAction(v, action)
       return b
     }
     row.appendChild(btn('🎯 攔截', 'intercept', '#22d3ee'))
     row.appendChild(btn('🧭 推算', 'dr', '#38bdf8'))
+    row.appendChild(btn('🔗 分享', 'share', '#a3e635'))
     el.appendChild(row)
   }
   return el
@@ -109,9 +112,17 @@ export class VesselMarkers {
 
   constructor(
     private group: L.LayerGroup,
-    private onTool: (v: Vessel, t: Tool) => void,
+    private onAction: (v: Vessel, a: VesselAction) => void,
     private trackOf: (mmsi: string) => TrackPoint[],
   ) {}
+
+  /** 打開某艘船的資訊（分享連結指定的船）。這艘還沒出現就回 false，呼叫端下次再試。 */
+  open(mmsi: string): boolean {
+    const e = this.entries.get(mmsi)
+    if (!e) return false
+    e.marker.openPopup()
+    return true
+  }
 
   update(vessels: Vessel[]): void {
     const seen = new Set<string>()
@@ -124,7 +135,7 @@ export class VesselMarkers {
         const marker = L.marker([v.lat, v.lng], { icon: iconOf(look), keyboard: false })
         const entry: Entry = { marker, v, look: look.key, bow }
         // 彈出視窗用函式：打開時才建 DOM，平常一個都不建
-        marker.bindPopup(() => popupOf(entry.v, lookOf(entry.v), this.onTool))
+        marker.bindPopup(() => popupOf(entry.v, lookOf(entry.v), this.onAction))
         marker.on('popupopen', () => this.showTrack(entry.v.mmsi))
         marker.on('popupclose', () => this.hideTrack(entry.v.mmsi))
         marker.on('add', () => applyBow(marker, entry.bow))
@@ -145,7 +156,7 @@ export class VesselMarkers {
         applyBow(e.marker, bow)
       }
       if (this.openMmsi === v.mmsi && e.marker.isPopupOpen()) {
-        e.marker.getPopup()?.setContent(popupOf(v, look, this.onTool))
+        e.marker.getPopup()?.setContent(popupOf(v, look, this.onAction))
         this.drawTrack(v)
       }
     }

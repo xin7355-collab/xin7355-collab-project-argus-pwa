@@ -62,6 +62,23 @@ export function nearestSnap(h: number, v: number, hs: SnapHeights): Snap {
   return 'peek'
 }
 
+/**
+ * 在內容區滑動時，要不要把這個手勢當成「拖抽屜」。
+ * 只在內容已經捲到最上面、往下、而且偏垂直時接手（像 Apple 地圖）；
+ * 往上捲、左右滑、清單還沒到頂，都交給原生捲動。
+ *
+ * 要在第一個有位移的 touchmove 就決定：iOS 一旦開始原生捲動，之後再 preventDefault 也擋不住，
+ * 會變成清單在彈、抽屜不動。所以只有「完全沒動」才回 wait。
+ * @param atTop 手指底下的捲動區是否都已在最上面
+ * @param dx 從按下到現在的水平位移（px）
+ * @param dy 從按下到現在的垂直位移（px，往下為正）
+ */
+export function pullDecision(atTop: boolean, dx: number, dy: number): 'claim' | 'native' | 'wait' {
+  if (dx === 0 && dy === 0) return 'wait'
+  if (!atTop) return 'native'
+  return dy > 0 && dy > Math.abs(dx) * 1.25 ? 'claim' : 'native'
+}
+
 /** 點一下把手：收起→一半→全開→一半… 像 Apple 地圖。 */
 export function tapCycle(s: Snap): Snap {
   return s === 'peek' ? 'half' : s === 'half' ? 'full' : 'half'

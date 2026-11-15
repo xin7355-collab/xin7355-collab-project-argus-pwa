@@ -1,6 +1,7 @@
 import { useTacticalStore } from '../store/tacticalStore'
 import type { LaunchItem } from '../lib/launcher'
 import type { TacticalMode } from '../types'
+import { buildShareUrl, shareUrl } from '../lib/shareLink'
 
 /**
  * 點功能清單上的一格要做什麼。
@@ -25,6 +26,19 @@ export function launch(item: LaunchItem) {
     case 'settings':
       st.setSettingsOpen(true)
       return
+    case 'share': {
+      // 要在點擊當下就呼叫分享選單（iOS 要求使用者手勢），所以不先做任何 await
+      const v = st.mapView
+      const url = buildShareUrl(window.location.href, {
+        lat: v.lat,
+        lng: v.lng,
+        zoom: v.zoom,
+        mode: st.mode === 'basic' ? undefined : st.mode,
+        base: st.baseLayer,
+      })
+      void shareUrl(url).then((msg) => useTacticalStore.getState().setStatus(msg))
+      return
+    }
     case 'measure':
       if (!st.measuring) st.toggleMeasure()
       st.setSheetSnap('peek')

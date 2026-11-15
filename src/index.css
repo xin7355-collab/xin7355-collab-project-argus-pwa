@@ -689,3 +689,31 @@ html.sheet-tall .leaflet-bottom {
   background: #1e293b !important;
   color: #e2e8f0 !important;
 }
+
+/* ── 無障礙 ─────────────────────────────────────────────
+   以前 viewport 鎖住縮放（user-scalable=no），視力不好的人沒辦法放大字。
+   拿掉之後，iOS 在「字小於 16px 的輸入框」取得焦點時會自動放大整頁、而且不會縮回來——
+   所以觸控裝置上輸入框一律至少 16px（滑桿、勾選框沒有字，不用管）。 */
+@media (pointer: coarse) {
+  input:not([type='range']):not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+  }
+}
+/* 鍵盤操作（桌機、外接鍵盤、iOS 切換控制）要看得到現在在哪個按鈕上；用手指點的不會出現框 */
+:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+}
+/* 系統設定「減少動態效果」：拿掉過場動畫（地圖飛行在 MapContainer 另外處理） */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

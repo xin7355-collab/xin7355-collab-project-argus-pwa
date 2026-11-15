@@ -24,6 +24,7 @@ import { SituationOverview } from './components/SituationOverview'
 import { applyUiScale } from './lib/uiScale'
 import { useTacticalStore } from './store/tacticalStore'
 import { useSentinelCheck } from './components/useSentinelCheck'
+import { useShareLink } from './components/useShareLink'
 
 export default function App() {
   const uiScale = useTacticalStore((s) => s.uiScale)
@@ -32,6 +33,7 @@ export default function App() {
     applyUiScale(uiScale)
   }, [uiScale])
   useSentinelCheck()
+  useShareLink()
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-tactical-bg text-slate-200">

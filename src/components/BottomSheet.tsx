@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { nearestSnap, snapHeights, tapCycle, type Snap } from '../lib/sheet'
+import { nearestSnap, pullDecision, snapHeights, tapCycle, type Snap, type SnapHeights } from '../lib/sheet'
 
 /**
  * 可拖曳的底部抽屜（像 Google／Apple 地圖）。
@@ -8,8 +8,8 @@ import { nearestSnap, snapHeights, tapCycle, type Snap } from '../lib/sheet'
  * 拖的時候只改 transform（不重新排版，iPhone 上才跟得上手指），
  * 放手後才把內容區的高度設成那一段，讓清單能捲到底。
  *
- * 只有把手和標題列能拖。內容區留給捲動——兩者搶同一個手勢，
- * 使用者會在想捲清單時把抽屜拖走。
+ * 把手和標題列隨時能拖。內容區平常留給捲動；只有清單已經在最上面、
+ * 手指往下拉時才接手變成拖抽屜（像 Apple 地圖），不然想捲清單時會把抽屜拖走。
  */
 export function BottomSheet({
   snap,
@@ -24,6 +24,7 @@ export function BottomSheet({
   children: ReactNode
 }) {
   const headerRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const probeRef = useRef<HTMLDivElement>(null)
   const topProbeRef = useRef<HTMLDivElement>(null)
   const [vh, setVh] = useState(() => window.innerHeight)
@@ -79,6 +80,88 @@ export function BottomSheet({
     root.style.setProperty('--sheet-h', `${Math.round(shown)}px`)
     root.classList.toggle('sheet-tall', shown > vh * 0.62)
   }, [shown, vh])
+
+  // 內容區的觸控要用原生監聽：React 的 touchmove 是 passive，不能 preventDefault，
+  // 擋不住清單本身的彈跳。監聽只綁一次，最新的高度與回呼從 ref 讀。
+  const live = useRef<{ shown: number; hs: SnapHeights; onSnap: (s: Snap) => void }>({ shown, hs, onSnap })
+  live.current = { shown, hs, onSnap }
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el) return
+    let t: {
+      x0: number
+      y0: number
+      h0: number
+      state: 'wait' | 'claim' | 'native'
+      atTop: boolean
+      samples: { t: number; y: number }[]
+      lastH: number
+    } | null = null
+
+    /** 手指底下到內容區之間，每一層捲動區都在最上面才算「到頂」（清單裡還有小清單時也對）。 */
+    const atTopFrom = (target: EventTarget | null): boolean => {
+      for (let n = target as HTMLElement | null; n; n = n.parentElement) {
+        if (n.scrollTop > 0) return false
+        if (n === el) return true
+      }
+      return true
+    }
+    const onStart = (e: TouchEvent) => {
+      // 滑桿、輸入框自己要用手勢；多指是縮放
+      if (e.touches.length !== 1 || (e.target as HTMLElement).closest('input, textarea, select, [data-no-sheet-drag]')) {
+        t = null
+        return
+      }
+      const p = e.touches[0]
+      t = {
+        x0: p.clientX,
+        y0: p.clientY,
+        h0: live.current.shown,
+        state: 'wait',
+        atTop: atTopFrom(e.target),
+        samples: [{ t: e.timeStamp, y: p.clientY }],
+        lastH: live.current.shown,
+      }
+    }
+    const onMove = (e: TouchEvent) => {
+      if (!t || t.state === 'native') return
+      const p = e.touches[0]
+      const dx = p.clientX - t.x0
+      const dy = p.clientY - t.y0
+      if (t.state === 'wait') {
+        t.state = pullDecision(t.atTop, dx, dy)
+        if (t.state !== 'claim') return
+        document.documentElement.classList.add('sheet-dragging')
+      }
+      e.preventDefault()
+      const { hs } = live.current
+      t.samples.push({ t: e.timeStamp, y: p.clientY })
+      if (t.samples.length > 5) t.samples.shift()
+      t.lastH = Math.max(hs.peek, Math.min(hs.full, t.h0 - dy))
+      setDragH(t.lastH)
+    }
+    const onEnd = () => {
+      const d = t
+      t = null
+      if (!d || d.state !== 'claim') return
+      document.documentElement.classList.remove('sheet-dragging')
+      const s0 = d.samples[0]
+      const s1 = d.samples[d.samples.length - 1]
+      const v = -(s1.y - s0.y) / Math.max(1, s1.t - s0.t)
+      setDragH(null)
+      live.current.onSnap(nearestSnap(d.lastH, v, live.current.hs))
+    }
+    el.addEventListener('touchstart', onStart, { passive: true })
+    el.addEventListener('touchmove', onMove, { passive: false })
+    el.addEventListener('touchend', onEnd)
+    el.addEventListener('touchcancel', onEnd)
+    return () => {
+      el.removeEventListener('touchstart', onStart)
+      el.removeEventListener('touchmove', onMove)
+      el.removeEventListener('touchend', onEnd)
+      el.removeEventListener('touchcancel', onEnd)
+    }
+  }, [])
 
   const onDown = (e: React.PointerEvent) => {
     // 標題列上的按鈕（例如「結束」）要能正常按，不能被當成拖曳
@@ -141,6 +224,7 @@ export function BottomSheet({
         <div ref={headerRef}>{header}</div>
       </div>
       <div
+        ref={contentRef}
         className="min-h-0 overflow-y-auto overscroll-contain px-3 pad-safe-bottom"
         style={{ height: Math.max(0, target - GRAB - headH) }}
       >

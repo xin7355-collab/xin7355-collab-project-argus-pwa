@@ -78,6 +78,17 @@ export function MapContainer() {
       ;(e.currentTarget as HTMLElement).classList.toggle('expanded')
     })
 
+    // 系統設定開了「減少動態效果」：地圖飛行改成直接跳過去。
+    // 專案裡有好幾處呼叫 flyTo／flyToBounds，在這裡統一換掉，不用每處各自判斷
+    // （CSS 的 prefers-reduced-motion 管不到 Leaflet 用 JS 跑的飛行動畫）。
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      m.options.zoomAnimation = false
+      m.options.fadeAnimation = false
+      m.options.markerZoomAnimation = false
+      m.flyTo = (center, zoom, opts) => m.setView(center, zoom, { ...opts, animate: false })
+      m.flyToBounds = (bounds, opts) => m.fitBounds(bounds, { ...opts, animate: false })
+    }
+
     setMap(m)
     return () => {
       m.remove() // 卸載時徹底移除地圖，釋放所有資源

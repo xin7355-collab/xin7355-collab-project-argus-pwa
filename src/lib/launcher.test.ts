@@ -1,10 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { GROUPS, PEEK_IDS, visibleGroups, findItem, modeMeta } from './launcher.ts'
-import type { TacticalMode } from '../types'
+import { TACTICAL_MODES } from '../types/index.ts'
 
-// 跟 types/index.ts 的 TacticalMode 同步。漏一個模式＝那個功能從 App 上消失。
-const ALL_MODES: TacticalMode[] = ['orbit', 'sar', 'optical', 'ais', 'rescue', 'seastate', 'envanim', 'typhoon']
+// 直接拿 types 裡的模式清單（basic 是「沒有模式」，不算）。漏一個模式＝那個功能從 App 上消失。
+const ALL_MODES = TACTICAL_MODES.filter((m) => m !== 'basic')
 
 // 跟 App.tsx 掛載的工具面板（openTool）同步。
 const ALL_TOOLS = [

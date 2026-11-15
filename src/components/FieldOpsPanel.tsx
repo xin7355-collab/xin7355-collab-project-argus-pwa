@@ -3,6 +3,7 @@ import { useTacticalStore } from '../store/tacticalStore'
 import { POI_ICONS, POI_COLORS } from '../lib/poi'
 import { poiToCsv, csvToPoi } from '../lib/poiCsv'
 import { geocode, openGmaps, type GeoResult } from '../lib/geocode'
+import { errText } from '../lib/feedState'
 import { decodePowerCode, type PoleResult } from '../lib/taipowerPole'
 import { elevation } from '../lib/elevation'
 import { parseCoord, fmtDDM } from '../lib/coordParse'
@@ -48,8 +49,8 @@ export function FieldOpsPanel() {
       const r = await geocode(q)
       setResults(r)
       if (r.length === 0) setSearchErr('找不到，換個關鍵字試試')
-    } catch {
-      setSearchErr('搜尋失敗（可能網路或服務忙碌，稍後再試）')
+    } catch (e) {
+      setSearchErr(errText(e, '搜尋失敗（可能網路或服務忙碌，稍後再試）'))
     } finally {
       setSearching(false)
     }
