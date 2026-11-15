@@ -2,7 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   coversPoint,
+  crossAlong,
   findPasses,
+  sarBand,
   groundTrack,
   nearestApproach,
   splitAtDateline,
@@ -183,4 +185,56 @@ test('找過境時段：同一段軌跡經過兩次要分成兩筆，不能併�
   const passes = findPasses(fake, 200, 24.5, 122)
   assert.equal(passes.length, 2, '中間離開過就要切成兩筆')
   assert.ok(passes[0].endMs < passes[1].startMs)
+})
+
+// ── 側視雷達：掃描帶在軌跡一側 ──
+
+test('Sentinel-1 IW（高度 693 km、入射角 29.1–46.0°、右側視）：帶在右側約 340–620 公里', () => {
+  const b = sarBand(693, 29.1, 46.0, 'right')
+  assert.ok(b.minKm > 330 && b.minKm < 355, `近端 ${b.minKm.toFixed(0)}`)
+  assert.ok(b.maxKm > 600 && b.maxKm < 630, `遠端 ${b.maxKm.toFixed(0)}`)
+  const l = sarBand(693, 29.1, 46.0, 'left')
+  assert.ok(l.minKm < 0 && l.maxKm < 0, '左側視整段在負值')
+  assert.ok(Math.abs(l.minKm + b.maxKm) < 1e-9)
+})
+
+test('橫向距離：飛行方向右邊是正、左邊是負', () => {
+  const p = { lat: 0, lng: 120 }
+  // 往北飛（航向 0），東邊是右邊
+  assert.ok(crossAlong(p, 0, 0, 121).xt > 100)
+  assert.ok(crossAlong(p, 0, 0, 119).xt < -100)
+  // 往南飛（航向 180），東邊變左邊
+  assert.ok(crossAlong(p, 180, 0, 121).xt < -100)
+  // 正前方：橫向 0、沿軌為正
+  const f = crossAlong(p, 0, 1, 120)
+  assert.ok(Math.abs(f.xt) < 1 && f.at > 100)
+})
+
+test('側視雷達只掃得到右側的帶：正下方、左側都掃不到（以前會誤判成掃得到）', () => {
+  const band = sarBand(693, 29.1, 46.0, 'right')
+  const tr = groundTrack(SUNSYNC, 0, 900_000, 4)
+  const mid = tr[Math.floor(tr.length / 2)]
+  const next = tr[Math.floor(tr.length / 2) + 1]
+  const brg = Math.atan2(next.lng - mid.lng, next.lat - mid.lat) * 180 / Math.PI
+  const right = destPoint(mid.lat, mid.lng, brg + 90, 480)
+  const left = destPoint(mid.lat, mid.lng, brg - 90, 480)
+  const hit = findPasses(tr, band, right[0], right[1])
+  assert.equal(hit.length, 1, '右側 480 km 要掃得到一趟')
+  assert.ok(hit[0].xtKm! > band.minKm && hit[0].xtKm! < band.maxKm)
+  assert.ok(Math.abs(hit[0].closestKm - 480) < 15, `正對時橫向 ${hit[0].closestKm.toFixed(0)} km`)
+  assert.equal(findPasses(tr, band, left[0], left[1]).length, 0, '左側掃不到')
+  assert.equal(findPasses(tr, band, mid.lat, mid.lng).length, 0, '正下方掃不到')
+  // 舊的對稱模型會說正下方掃得到——這正是要修的錯
+  assert.equal(findPasses(tr, 250, mid.lat, mid.lng).length, 1)
+})
+
+test('側視雷達的掃描帶多邊形：兩條邊都在右側，距離就是近端與遠端', () => {
+  const band = sarBand(693, 29.1, 46.0, 'right')
+  const tr = groundTrack(SUNSYNC, 0, 300_000, 30)
+  const { left, right } = swathEdges(tr, band)
+  const k = Math.floor(left.length / 2)
+  const p = tr[k]
+  const r = right[right.length - 1 - k]
+  assert.ok(Math.abs(distanceKm(p.lat, p.lng, left[k][0], left[k][1]) - band.minKm) < 5)
+  assert.ok(Math.abs(distanceKm(p.lat, p.lng, r[0], r[1]) - band.maxKm) < 5)
 })

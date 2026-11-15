@@ -30,17 +30,25 @@ export function SatPassLayer({ map }: { map: L.Map }) {
     if (!satPass || satPass.points.length < 2) return
     const g = L.layerGroup().addTo(map)
 
+    const b = satPass.band
+    const side =
+      b.minKm === -b.maxKm
+        ? ''
+        : `雷達側視：掃描帶在軌跡${b.minKm >= 0 ? '右' : '左'}側 ` +
+          `${formatDist(Math.min(Math.abs(b.minKm), Math.abs(b.maxKm)), unit, 0)}–` +
+          `${formatDist(Math.max(Math.abs(b.minKm), Math.abs(b.maxKm)), unit, 0)}，正下方拍不到<br/>`
     const info =
       `<b style="color:${COLOR}">🛰️ ${satPass.craft}</b><br/>` +
       `掃過這片海 ${hhmm(satPass.startMs)} – ${hhmm(satPass.endMs)}（本地時間）<br/>` +
       `最接近 ${hhmm(satPass.closestMs)}　掃幅 ${formatDist(satPass.swathKm, unit, 0)}<br/>` +
+      side +
       '<span style="color:#94a3b8;font-size:11px">位置由 SGP4 + 真實軌道根數算出。' +
       '這條帶是感測器「掃得到」的範圍，不等於「一定會拍」——' +
       'Sentinel／Landsat 都有取像排程，開闊外海常常不在排程內。</span>'
 
     // 掃幅帶：先畫，才不會蓋住中心線
     for (const seg of splitAtDateline(satPass.points)) {
-      const { left, right } = swathEdges(seg, satPass.swathKm)
+      const { left, right } = swathEdges(seg, satPass.band)
       if (left.length > 1) {
         L.polygon([...left, ...right], {
           color: COLOR,

@@ -15,7 +15,9 @@ export interface FleetMember {
   id: string
   /**
    * TLE 名稱開頭。給陣列是因為同一個「感測器」常常掛在不只一個平台上：
-   * MODIS 在 Terra 與 Aqua 上、VIIRS 在 NOAA-20 與 Suomi NPP 上。
+   * MODIS 在 Terra 與 Aqua 上、VIIRS 在 NOAA-20 與 NOAA-21 上。
+   * （Suomi NPP 也有 VIIRS，但 NASA 的影像只到 2026-11-02——GIBS 目錄實測——就停了，
+   *   列進來只會算出「有過境、卻永遠沒有影像」的假機會。）
    * 只收一顆會少算一半的過境機會。
    */
   tlePrefix: string[]
@@ -28,7 +30,7 @@ export const FLEET: FleetMember[] = [
   { id: 's1', tlePrefix: ['SENTINEL-1'] },
   { id: 's2', tlePrefix: ['SENTINEL-2'] },
   { id: 'landsat', tlePrefix: ['LANDSAT'] },
-  { id: 'viirs', tlePrefix: ['NOAA 20', 'SUOMI NPP'] },
+  { id: 'viirs', tlePrefix: ['NOAA 20', 'NOAA 21'] },
   { id: 'modis', tlePrefix: ['TERRA', 'AQUA'] },
 ]
 
@@ -46,6 +48,11 @@ export interface FleetResult {
    * 聽起來像是衛星退役了，實際上只是這次沒下載到，重試就會好。
    */
   groupErrors?: string[]
+  /**
+   * celestrak 暫時連不到、改用 Worker 備份的群組（每項已經是人看得懂的一句話）。
+   * 備份最多 7 天；要講出來，使用者才知道預報是用舊根數算的。
+   */
+  staleNotes?: string[]
 }
 
 /** 把抓回來的 TLE 文字分配到各衛星。純函式，好測。 */
@@ -88,29 +95,52 @@ export async function fetchFleetTle(timeoutMs = 15000): Promise<FleetResult> {
 
   const texts: string[] = []
   const errs: string[] = []
+  const stale: string[] = []
   for (const g of FLEET_GROUPS) {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
     try {
-      const res = await fetch(`/api/celestrak/${g}`, { signal: ctrl.signal })
-      if (!res.ok) {
-        // Worker 會把上游狀態帶出來，分得出「沒資料」與「被擋」
-        const j = await res.json().catch(() => null)
-        throw new Error(j?.error || `HTTP ${res.status}`)
-      }
-      texts.push(await res.text())
+      const r = await fetchTleGroup(g, timeoutMs)
+      texts.push(r.text)
+      if (r.stale) stale.push(r.stale)
     } catch (e) {
       errs.push(`${g}：${e instanceof Error ? e.message : '連線失敗'}`)
-    } finally {
-      clearTimeout(timer)
     }
   }
 
   if (texts.length === 0) {
     throw new Error(`取不到軌道根數 — ${errs.join('；')}`)
   }
-  // 只有全抓到才進快取。部分失敗也快取的話，使用者按「重算」會拿到
+  // 只有全抓到（而且不是備份）才進快取。部分失敗也快取的話，使用者按「重算」會拿到
   // 同一份殘缺資料，連續半小時都以為那顆衛星真的不見了。
-  if (errs.length === 0) cache = { at: Date.now(), texts }
-  return { ...assignFleet(texts), groupErrors: errs }
+  if (errs.length === 0 && stale.length === 0) cache = { at: Date.now(), texts }
+  return { ...assignFleet(texts), groupErrors: errs, staleNotes: stale }
+}
+
+/** 經自家 Worker 抓一組 TLE。stale＝celestrak 連不到、拿的是備份（附一句說明）。 */
+export async function fetchTleGroup(group: string, timeoutMs = 15000): Promise<{ text: string; stale: string | null }> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const res = await fetch(`/api/celestrak/${group}`, { signal: ctrl.signal })
+    if (!res.ok) {
+      // Worker 會把上游狀態帶出來，分得出「沒資料」與「被擋」
+      const j = await res.json().catch(() => null)
+      throw new Error(j?.error || `HTTP ${res.status}`)
+    }
+    const text = await res.text()
+    const stale = res.headers.get('x-tle-stale') === '1' ? staleNote(group, res.headers.get('x-fetched-at'), Date.now()) : null
+    return { text, stale }
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw new Error(`等了 ${Math.round(timeoutMs / 1000)} 秒沒回應（網路慢或斷線）`)
+    throw e
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** 「weather 群組：celestrak 暫時連不到，用的是 9 小時前的備份」。純函式。 */
+export function staleNote(group: string, fetchedAt: string | null, nowMs: number): string {
+  const t = fetchedAt ? Date.parse(fetchedAt) : NaN
+  if (!Number.isFinite(t)) return `${group}：celestrak 暫時連不到，用的是之前的備份`
+  const h = Math.max(1, Math.round((nowMs - t) / 3600_000))
+  return `${group}：celestrak 暫時連不到，用的是 ${h < 48 ? `${h} 小時` : `${Math.round(h / 24)} 天`}前的備份`
 }

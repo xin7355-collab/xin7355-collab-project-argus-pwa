@@ -24,25 +24,44 @@ const ALLOWED_GROUPS = new Set([
   'weather', // 氣象衛星
   'science',
   'stations', // 含 ISS
+  'sar', // 雷達衛星（Sentinel-1、ICEYE、Capella、RCM…）
 ])
 
 /** TLE 一天大約只更新幾次，快取 6 小時；celestrak 也明確要求不要猛抓。 */
 const TLE_CACHE_SECONDS = 6 * 60 * 60
+/**
+ * 備份留 7 天：celestrak 暫時連不到時拿上一份成功的頂著（標明是舊的）。
+ * 7 天內的 TLE 推算誤差還在幾公里內；再舊就寧可講算不出來。
+ * 做法參考 gods-eye-view（MIT）的 server/providers/space/celestrak.js。
+ */
+const TLE_BACKUP_SECONDS = 7 * 24 * 60 * 60
+const CELESTRAK = 'https://celestrak.org/NORAD/elements/gp.php'
 
-async function proxyCelestrak(request, group, ctx) {
+async function proxyCelestrak(request, group, ctx, env) {
   if (!ALLOWED_GROUPS.has(group)) {
     return json({ error: `不支援的群組「${group}」` }, 400)
   }
 
-  const upstream =
-    `https://celestrak.org/NORAD/elements/gp.php` +
-    `?GROUP=${encodeURIComponent(group)}&FORMAT=tle`
+  const upstream = `${env.CELESTRAK_BASE || CELESTRAK}?GROUP=${encodeURIComponent(group)}&FORMAT=tle`
+  // 測試時可用環境變數把快取改短，才驗得到「過期＋上游壞掉 → 回備份」
+  const ttl = Number(env.TLE_CACHE_SECONDS) || TLE_CACHE_SECONDS
 
   // 用 Cloudflare 的邊緣快取，避免每個使用者、每次開 App 都去敲 celestrak。
   const cacheKey = new Request(upstream, { method: 'GET' })
+  const backupKey = new Request(`${upstream}&argus-backup=1`, { method: 'GET' })
   const cache = caches.default
   const hit = await cache.match(cacheKey)
   if (hit) return withCors(hit)
+
+  // 上游失敗：有備份就回備份（標明是舊的），沒有才回錯誤
+  const fallback = async (why, status) => {
+    const old = await cache.match(backupKey)
+    if (!old) return json({ error: why }, status)
+    const r = new Response(old.body, old)
+    r.headers.set('x-tle-stale', '1')
+    r.headers.set('cache-control', 'no-store')
+    return withCors(r)
+  }
 
   let res
   try {
@@ -52,31 +71,46 @@ async function proxyCelestrak(request, group, ctx) {
         'user-agent': 'argus-pwa (maritime observation; contact via GitHub)',
       },
       // 邊緣再快取一層，連 subrequest 都省下來
-      cf: { cacheTtl: TLE_CACHE_SECONDS, cacheEverything: true },
+      cf: { cacheTtl: ttl, cacheEverything: true },
     })
-  } catch (e) {
-    return json({ error: `連不到 celestrak：${e.message}` }, 502)
+  } catch {
+    // 不把底層錯誤原文丟給前端：使用者看不懂，也可能帶出內部細節
+    return fallback('連不到 celestrak（網路或對方暫停服務），稍後再試', 502)
   }
 
   if (!res.ok) {
     // 把上游的狀態碼帶出去，前端才分得出「沒資料」和「被擋」。
-    return json({ error: `celestrak 回應 ${res.status}` }, res.status === 404 ? 404 : 502)
+    return fallback(`celestrak 回應 ${res.status}`, res.status === 404 ? 404 : 502)
   }
 
   const text = await res.text()
   // celestrak 出錯時會回 HTML 錯誤頁而不是 TLE，並且仍然是 200。
   // 不擋掉的話前端會把一整頁 HTML 當成軌道根數去解析。
   if (!text.startsWith('1 ') && !/\r?\n1 /.test(text)) {
-    return json({ error: 'celestrak 回傳的不是 TLE（多半是上游暫時故障）' }, 502)
+    return fallback('celestrak 回傳的不是 TLE（多半是上游暫時故障）', 502)
   }
 
+  const fetchedAt = new Date().toISOString()
   const out = new Response(text, {
     headers: {
       'content-type': 'text/plain; charset=utf-8',
-      'cache-control': `public, max-age=${TLE_CACHE_SECONDS}`,
+      'cache-control': `public, max-age=${ttl}`,
+      'x-fetched-at': fetchedAt,
     },
   })
   ctx.waitUntil(cache.put(cacheKey, out.clone()))
+  ctx.waitUntil(
+    cache.put(
+      backupKey,
+      new Response(text, {
+        headers: {
+          'content-type': 'text/plain; charset=utf-8',
+          'cache-control': `public, max-age=${TLE_BACKUP_SECONDS}`,
+          'x-fetched-at': fetchedAt,
+        },
+      }),
+    ),
+  )
   return withCors(out)
 }
 
@@ -91,6 +125,7 @@ function json(obj, status) {
 function withCors(res) {
   const r = new Response(res.body, res)
   r.headers.set('access-control-allow-origin', '*')
+  r.headers.set('access-control-expose-headers', 'x-tle-stale, x-fetched-at')
   return r
 }
 
@@ -137,8 +172,8 @@ async function proxyAis(request, url, env) {
       return json({ error: `aisstream 拒絕連線（HTTP ${res.status}）` }, 502)
     }
     return res
-  } catch (e) {
-    return json({ error: `連不到 aisstream：${e.message}` }, 502)
+  } catch {
+    return json({ error: '連不到 aisstream（網路或對方暫停服務），稍後再試' }, 502)
   }
 }
 
@@ -151,7 +186,7 @@ export default {
     const m = url.pathname.match(/^\/api\/celestrak\/([A-Za-z0-9_-]+)\/?$/)
     if (m) {
       if (request.method !== 'GET') return json({ error: '只接受 GET' }, 405)
-      return proxyCelestrak(request, m[1], ctx)
+      return proxyCelestrak(request, m[1], ctx, env)
     }
 
     if (url.pathname.startsWith('/api/')) {

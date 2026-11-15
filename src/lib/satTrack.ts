@@ -1,5 +1,5 @@
 import { eciToGeodetic, gstime, propagate, twoline2satrec, degreesLat, degreesLong } from 'satellite.js'
-import { findPasses, type PassWindow, type TrackPoint } from './groundTrack.ts'
+import { findPasses, toBand, type Band, type PassWindow, type TrackPoint } from './groundTrack.ts'
 import { distanceKm } from './windRadar.ts'
 import type { TleRecord } from './tle'
 
@@ -136,7 +136,7 @@ export function passesForPoint(
   rec: TleRecord,
   lat: number,
   lng: number,
-  swathKm: number,
+  swath: number | Band,
   fromMs: number,
   toMs: number,
   opt: { coarseS?: number; fineS?: number } = {},
@@ -146,8 +146,11 @@ export function passesForPoint(
 
   const coarseS = Math.max(1, opt.coarseS ?? 60)
   const fineS = Math.max(1, opt.fineS ?? 4)
-  const half = swathKm / 2
-  const slack = half + MAX_GROUND_SPEED_KM_S * coarseS
+  // 粗掃門檻：星下點離目標多遠以內「可能」掃到。側視雷達的帶在一側很遠的地方，
+  // 要用帶的最遠端（加上沿軌半寬）當半徑，不能用掃幅寬的一半
+  const band = toBand(swath)
+  const reach = Math.hypot(Math.max(Math.abs(band.minKm), Math.abs(band.maxKm)), (band.maxKm - band.minKm) / 2)
+  const slack = (band.minKm === -band.maxKm ? band.maxKm : reach) + MAX_GROUND_SPEED_KM_S * coarseS
 
   // 粗掃：記下所有「可能接近」的時刻
   const candidates: number[] = []
@@ -179,7 +182,7 @@ export function passesForPoint(
       const g = sub(t)
       if (g) pts.push({ lat: g.lat, lng: g.lng, at: t })
     }
-    passes.push(...findPasses(pts, swathKm, lat, lng))
+    passes.push(...findPasses(pts, swath, lat, lng))
   }
 
   passes.sort((x, y) => x.startMs - y.startMs)

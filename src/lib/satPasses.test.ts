@@ -14,7 +14,8 @@ import { makeTle, fixtureEpochMs } from './tleFixture.ts'
 import { parseTle, type TleRecord } from './tle.ts'
 import { passesForPoint, trackFromTle } from './satTrack.ts'
 import { findPasses } from './groundTrack.ts'
-import { planPasses, topPerSat } from './passPlan.ts'
+import { MIN_OPTICAL_SUN_DEG, planPasses, topPerSat } from './passPlan.ts'
+import { destPoint } from './windRadar.ts'
 import { assignFleet } from './satFleet.ts'
 
 /** Sentinel-2 那一類的太陽同步軌道。 */
@@ -192,4 +193,40 @@ test('topPerSat：每顆只留最早的幾趟（避免寬掃幅洗版）', () =>
   const top = topPerSat(plan.passes, 2)
   assert.equal(top.length, 2)
   assert.equal(top[0].startMs, plan.passes[0].startMs, '要留最早的，不是隨便兩趟')
+})
+
+// ── 光學要白天、雷達側視 ─────────────────────────────────────
+
+test('光學衛星：每一趟都標太陽仰角；太陽低於門檻的標成 dark，全在夜間時狀態是 darkOnly', () => {
+  const r = rec('SENTINEL-2A', SSO)
+  const target = subPointAt(r, T0 + 3600_000)
+  const plan = planPasses(assignFleet([makeTle('SENTINEL-2A', SSO)]), target.lat, target.lng, T0, { windowHours: 120 })
+  assert.ok(plan.passes.length > 0)
+  for (const p of plan.passes) {
+    assert.ok(Number.isFinite(p.sunDeg) && p.sunDeg >= -90 && p.sunDeg <= 90)
+    assert.equal(p.dark, p.sunDeg < MIN_OPTICAL_SUN_DEG, '光學：太陽低於門檻＝dark')
+  }
+  const st = plan.status.find((s) => s.satId === 's2')!
+  const lit = plan.passes.filter((p) => p.satId === 's2' && !p.dark).length
+  assert.equal(st.state, lit === 0 ? 'darkOnly' : 'passes', '全在夜間時不能說成「有過境可拍」')
+})
+
+test('雷達不看太陽：Sentinel-1 半夜經過也不標 dark', () => {
+  // 用同一個軌道當 Sentinel-1；目標放在軌跡右側 480 km（雷達帶裡），保證有掃到
+  const r = rec('SENTINEL-1A', SSO)
+  const tr = trackFromTle(r, T0 + 3600_000, T0 + 3600_000 + 20_000, 10)!
+  const [a, b] = tr.points
+  const brg = Math.atan2((b.lng - a.lng) * Math.cos((a.lat * Math.PI) / 180), b.lat - a.lat) * (180 / Math.PI)
+  const [tlat, tlng] = destPoint(a.lat, a.lng, brg + 90, 480)
+  const plan = planPasses(assignFleet([makeTle('SENTINEL-1A', SSO)]), tlat, tlng, T0, { windowHours: 48 })
+  const s1 = plan.passes.filter((p) => p.satId === 's1')
+  assert.ok(s1.length > 0, '右側 480 km 應該有一趟')
+  assert.ok(s1.every((p) => !p.dark))
+  assert.ok(s1.every((p) => p.xtKm !== null && p.xtKm > 0), '目標在右側')
+  // 正下方（舊模型會說掃得到）：那一趟不該出現在同一時刻
+  const below = planPasses(assignFleet([makeTle('SENTINEL-1A', SSO)]), a.lat, a.lng, T0, { windowHours: 1.5 })
+  assert.ok(
+    below.passes.every((p) => Math.abs(p.closestMs - (T0 + 3600_000)) > 120_000),
+    '軌跡正下方那一刻雷達掃不到',
+  )
 })

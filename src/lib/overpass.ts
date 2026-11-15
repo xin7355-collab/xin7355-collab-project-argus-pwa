@@ -10,6 +10,7 @@
 //     一天仍以 Copernicus/USGS 為準（要看實際軌道相位與影像磚）。
 
 import { formatDist, type DistUnit } from './units.ts'
+import { sarBand, type Band } from './groundTrack.ts'
 
 export interface SatDef {
   id: string
@@ -21,6 +22,11 @@ export interface SatDef {
   revisitText: string
   /** 掃幅寬、幾乎每天涵蓋任一點 → 可給具體下次過境時刻。 */
   daily: boolean
+  /**
+   * 側視雷達的掃描帶（相對軌跡，正＝右側）。沒給就是以軌跡為中心、寬 swathKm 的對稱帶（光學）。
+   * 雷達一定要給：它正下方拍不到，帶整條在一側。
+   */
+  band?: Band
   /** 通過的地方時（小時，24 制）。太陽同步軌道每天約在此時段過境。 */
   crossings: number[]
   use: string
@@ -30,7 +36,7 @@ export interface SatDef {
 export const SATS: SatDef[] = [
   {
     id: 'viirs',
-    name: 'VIIRS（NOAA-20／Suomi-NPP）',
+    name: 'VIIRS（NOAA-20／NOAA-21）',
     emoji: '🌙',
     kind: '夜間/每日',
     resText: '375–750m',
@@ -74,6 +80,9 @@ export const SATS: SatDef[] = [
     kind: '雷達',
     resText: '5–20m',
     swathKm: 250,
+    // 右側視；IW 模式入射角 29.1–46.0°、軌道高度 693 km（ESA SentiWiki 的 S1 任務規格）。
+    // 球面幾何算出來帶寬約 274 km，比官方的 250 km 略寬，是幾何近似的誤差，邊緣不要當精準值
+    band: sarBand(693, 29.1, 46.0, 'right'),
     revisitText: '約每 6–12 天',
     daily: false,
     crossings: [6, 18],

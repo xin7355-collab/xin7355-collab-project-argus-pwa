@@ -7,13 +7,16 @@ import {
   isGrazing,
   passDurationText,
   passKey,
+  sideText,
   toOverlay,
+  MIN_OPTICAL_SUN_DEG,
   type PassPlan,
   type PlannedPass,
 } from '../lib/passPlan'
 import { tleAgeText } from '../lib/satTrack'
 import { formatDist } from '../lib/units'
 import { Hint } from './Hint'
+import { SarOpsPanel } from './SarOpsPanel'
 
 // ── 「下一趟會不會拍到我這片海」─────────────────────────
 //
@@ -41,6 +44,11 @@ const KIND_STYLE: Record<string, string> = {
 
 const STATE_TEXT: Record<string, { icon: string; cls: string; text: string }> = {
   none: { icon: '○', cls: 'text-slate-400', text: '這段時間掃不到這裡' },
+  darkOnly: {
+    icon: '🌙',
+    cls: 'text-slate-400',
+    text: `這段時間只在夜間經過——光學衛星要太陽高於 ${MIN_OPTICAL_SUN_DEG}° 才拍得到東西`,
+  },
   noTle: {
     icon: '⚠',
     cls: 'text-amber-300',
@@ -74,6 +82,7 @@ export function PassFinder() {
   const [plan, setPlan] = useState<PassPlan | null>(null)
   const [at, setAt] = useState<{ lat: number; lng: number } | null>(null)
   const [groupErrors, setGroupErrors] = useState<string[]>([])
+  const [staleNotes, setStaleNotes] = useState<string[]>([])
   const [perSat, setPerSat] = useState(1)
   // 算完才回寫 state；元件在算的途中被卸載（切模式）就丟掉結果，不要 setState。
   const alive = useRef(true)
@@ -93,6 +102,7 @@ export function PassFinder() {
       try {
         const fleet = await fetchFleetTle()
         setGroupErrors(fleet.groupErrors ?? [])
+        setStaleNotes(fleet.staleNotes ?? [])
         // 先讓瀏覽器把「計算中」畫出來。SGP4 掃三天約數百毫秒，
         // 直接接著算的話按鈕會像沒反應（主執行緒被佔住，連按鈕回饋都不會動）。
         await new Promise((r) => setTimeout(r, 0))
@@ -105,6 +115,7 @@ export function PassFinder() {
         if (!alive.current) return
         setPlan(null)
         setGroupErrors([])
+        setStaleNotes([])
         setErr(e instanceof Error ? e.message : '取不到軌道根數')
       } finally {
         if (alive.current) setBusy(false)
@@ -117,8 +128,11 @@ export function PassFinder() {
   const moved =
     at && (Math.abs(at.lat - mapView.lat) > 0.05 || Math.abs(at.lng - mapView.lng) > 0.05)
 
-  const rows = plan ? topPerSat(plan.passes, perSat) : []
-  const more = plan ? plan.passes.length - rows.length : 0
+  // 光學衛星夜間經過拍不到東西，不列成機會（以前會列）；另外告訴使用者略過了幾趟
+  const lit = plan ? plan.passes.filter((p) => !p.dark) : []
+  const darkCount = plan ? plan.passes.length - lit.length : 0
+  const rows = topPerSat(lit, perSat)
+  const more = lit.length - rows.length
   const age = plan?.oldestEpochMs != null ? tleAgeText(plan.oldestEpochMs, now) : null
 
   const toggle = (p: PlannedPass) => {
@@ -203,6 +217,11 @@ export function PassFinder() {
             )}
           </div>
 
+          {staleNotes.length > 0 && (
+            <p className="mt-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-[0.625rem] leading-relaxed text-amber-300">
+              ⚠ {staleNotes.join('；')}。預報照算，但根數越舊誤差越大；有網路時按上面重算。
+            </p>
+          )}
           {groupErrors.length > 0 && (
             <p className="mt-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-[0.625rem] leading-relaxed text-amber-300">
               ⚠ 有 {groupErrors.length} 組根數這次沒抓到（{groupErrors.join('；')}）。
@@ -252,12 +271,24 @@ export function PassFinder() {
                       </span>
                     </div>
                     <div className="mt-0.5 flex flex-wrap gap-x-3 text-[0.625rem] text-slate-400">
-                      <span className={isGrazing(p) ? 'text-amber-300' : undefined}>
-                        最接近 {formatDist(p.closestKm, unit)}
-                      </span>
+                      {p.xtKm === null && (
+                        <span className={isGrazing(p) ? 'text-amber-300' : undefined}>
+                          最接近 {formatDist(p.closestKm, unit)}
+                        </span>
+                      )}
                       <span>解析度 {p.resText}</span>
                       <span>掃幅 {formatDist(p.swathKm, unit, 0)}</span>
+                      {p.satId === 'viirs' && (
+                        <span className="text-violet-300">
+                          {p.sunDeg < -6 ? '🌙 夜間：可看漁火' : p.sunDeg > MIN_OPTICAL_SUN_DEG ? '☀ 白天：真彩' : '晨昏'}
+                        </span>
+                      )}
                     </div>
+                    {p.xtKm !== null && (
+                      <div className={`mt-0.5 text-[0.625rem] leading-relaxed ${isGrazing(p) ? 'text-amber-300' : 'text-slate-400'}`}>
+                        {sideText(p, (km) => formatDist(km, unit))}
+                      </div>
+                    )}
                     {isGrazing(p) && (
                       <div className="mt-0.5 text-[0.625rem] leading-relaxed text-amber-300/90">
                         ⚠ 擦邊：目標在掃描帶最外緣，解析度最差，而且推算誤差可能讓它根本沒掃到
@@ -278,6 +309,11 @@ export function PassFinder() {
                 </button>
               )}
             </div>
+          )}
+          {darkCount > 0 && (
+            <p className="mt-1 text-[0.625rem] leading-relaxed text-slate-500">
+              🌙 另有 {darkCount} 趟光學衛星在夜間經過（太陽低於 {MIN_OPTICAL_SUN_DEG}°，拍不到），已略過。
+            </p>
           )}
 
           {/* 算不出來的那幾顆一定要講，不能顯示成「沒有過境」 */}
@@ -300,6 +336,8 @@ export function PassFinder() {
           )}
         </>
       )}
+
+      <SarOpsPanel />
 
       <Hint
         id="passfinder-limits"

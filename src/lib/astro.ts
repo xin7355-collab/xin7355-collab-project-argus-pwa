@@ -52,6 +52,14 @@ function sunCoords(d: number) {
   return { dec: declination(L, 0), ra: rightAscension(L, 0) }
 }
 
+/** 某時某地的太陽仰角（度，負＝在地平線下）。SunCalc 的 getPosition。 */
+export function sunAltitudeDeg(date: Date, lat: number, lng: number): number {
+  const d = toDays(date)
+  const c = sunCoords(d)
+  const H = siderealTime(d, rad * -lng) - c.ra
+  return altitude(H, rad * lat, c.dec) / rad
+}
+
 // ── 太陽事件時刻 ───────────────────────────────────────────
 const J0 = 0.0009
 function julianCycle(d: number, lw: number) {

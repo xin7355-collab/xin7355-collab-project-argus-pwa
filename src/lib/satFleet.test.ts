@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assignFleet, FLEET } from './satFleet.ts'
+import { assignFleet, FLEET, staleNote } from './satFleet.ts'
 import { SATS } from './overpass.ts'
 
 // 測試資料自己算檢查碼。前兩次手算都算錯（而且 parseTle 正確地把整組丟掉），
@@ -81,4 +81,16 @@ test('FLEET 的每個 id 都要在 SATS 裡找得到（掃幅才接得上）', (
   for (const f of FLEET) {
     assert.ok(known.has(f.id), `FLEET 的 ${f.id} 在 overpass.ts 的 SATS 裡沒有對應`)
   }
+})
+
+test('備份根數的說明：講出是哪一組、多舊', () => {
+  const now = Date.parse('2026-11-15T12:00:00Z')
+  assert.equal(staleNote('weather', '2026-11-15T03:00:00Z', now), 'weather：celestrak 暫時連不到，用的是 9 小時前的備份')
+  assert.equal(staleNote('resource', '2026-11-12T12:00:00Z', now), 'resource：celestrak 暫時連不到，用的是 3 天前的備份')
+  assert.match(staleNote('sar', null, now), /之前的備份/)
+})
+
+test('VIIRS 用 NOAA-20／21，不用 2026-11-02 停止供圖的 Suomi NPP', () => {
+  const viirs = FLEET.find((f) => f.id === 'viirs')!
+  assert.deepEqual(viirs.tlePrefix, ['NOAA 20', 'NOAA 21'])
 })

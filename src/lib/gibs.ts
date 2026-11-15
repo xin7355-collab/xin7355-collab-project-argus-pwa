@@ -1,4 +1,5 @@
 import L from 'leaflet'
+import { boatLightsLayerFor } from './nightLights'
 
 // ── NASA GIBS 免金鑰衛星影像 ────────────────────────────────
 //
@@ -90,21 +91,21 @@ export function buildGibsTrueColor(date: string, cls = 'gibs-imagery'): L.TileLa
 }
 
 /**
- * VIIRS 夜間日夜帶（Day/Night Band, ENCC）——「漁火」圖層。免金鑰。
+ * VIIRS 夜間日夜帶——「漁火」圖層。免金鑰。
  *
  * 這是海上看外海漁船最實用的免費衛星圖：VIIRS 每晚約 01:30(當地)過境，
- * 把夜間微光放大成近似恆定對比，海面上一顆顆亮點就是「開燈作業的漁船/漁船隊」。
+ * 海面上一顆顆亮點就是「開燈作業的漁船/漁船隊」。
  * 大量魷釣、棒受網船隊在外海會連成一片光帶——AIS 看不到的關燈船看不到，但
- * 開燈作業的整支船隊一覽無遺。約 500m 解析，夜間才有意義（白天為地表反射）。
+ * 開燈作業的整支船隊一覽無遺。約 750m 解析，夜間才有意義（白天為地表反射）。
  *
  * 注意：是「夜影像」，套在彩色底圖上會偏暗，屬正常；建議搭配深色底圖看。
- * 影像有數小時延遲，故預設用前一天最保險。
+ * 影像有數小時延遲，故預設用前一天最保險。哪個日期用哪個圖層見 boatLightsLayerFor。
  */
 export function buildGibsBoatLights(date: string, cls = 'gibs-imagery'): L.TileLayer {
-  const layer = 'VIIRS_SNPP_DayNightBand_ENCC'
-  const url = `${GIBS_BASE}/${layer}/default/${date}/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png`
+  const { id, level } = boatLightsLayerFor(date)
+  const url = `${GIBS_BASE}/${id}/default/${date}/GoogleMapsCompatible_Level${level}/{z}/{y}/{x}.png`
   return L.tileLayer(url, {
-    maxNativeZoom: 8, // DNB 原生約 500m（第 8 層），再放大由 Leaflet 內插
+    maxNativeZoom: level, // 原生解析只到這一層，再放大由 Leaflet 內插
     maxZoom: 19,
     opacity: 0.9,
     bounds: [

@@ -1,7 +1,8 @@
 import { FLEET, type FleetResult } from './satFleet.ts'
 import { passesForPoint, trackFromTle } from './satTrack.ts'
 import { SATS, type SatDef } from './overpass.ts'
-import type { TrackPoint } from './groundTrack'
+import { sunAltitudeDeg } from './astro.ts'
+import { toBand, type Band, type TrackPoint } from './groundTrack.ts'
 
 // ── 「下一趟會不會拍到我這片海」──────────────────────────
 //
@@ -21,6 +22,8 @@ export type SatState =
   | 'none'
   /** TLE 清單裡找不到這顆（celestrak 分組變動／衛星退役）。 */
   | 'noTle'
+  /** 有掃到，但全部在夜間——光學衛星拍不到東西。 */
+  | 'darkOnly'
   /** 有 TLE 但 SGP4 推不動（根數壞掉或已脫軌）。 */
   | 'badTle'
 
@@ -40,6 +43,14 @@ export interface PlannedPass {
   /** 這一趟最接近目標的距離（公里）。越接近畫質越好、越不會被掃幅邊緣切掉。 */
   closestKm: number
   closestMs: number
+  /** 掃描帶相對軌跡的位置（正＝右側）；側視雷達整條在一側。 */
+  band: Band
+  /** 側視雷達：正對時目標在軌跡哪一側、多遠（公里，正＝右側）；光學為 null。 */
+  xtKm: number | null
+  /** 最接近那一刻，目標處的太陽仰角（度）。 */
+  sunDeg: number
+  /** 光學衛星在夜間經過：幾何上掃得到，但拍不到東西。 */
+  dark: boolean
   /** 這一趟所依據的 TLE epoch。離現在越遠越不可信。 */
   epochMs: number
   /** 原始根數。要在地圖上畫這一趟的軌跡時得重算一次，不另外存一大串座標。 */
@@ -76,6 +87,12 @@ export interface PlanOpts {
 const SAT_BY_ID = new Map(SATS.map((s) => [s.id, s]))
 
 /**
+ * 光學影像要太陽多高才看得到東西（度）。低於這個角度，海面幾乎全黑或被長陰影蓋住。
+ * 以前沒有這條，Sentinel-2、Landsat 半夜經過也列成「拍攝機會」。
+ */
+export const MIN_OPTICAL_SUN_DEG = 10
+
+/**
  * 算出時窗內所有會掃到 (lat, lng) 的過境。
  *
  * 純函式（TLE 由呼叫端先抓好），所以離線測得到。
@@ -108,8 +125,10 @@ export function planPasses(
 
     let usable = 0
     let count = 0
+    let lit = 0
+    const band = toBand(def.band ?? def.swathKm)
     for (const rec of recs) {
-      const r = passesForPoint(rec, lat, lng, def.swathKm, fromMs, toMs, {
+      const r = passesForPoint(rec, lat, lng, band, fromMs, toMs, {
         coarseS: opt.coarseS,
         fineS: opt.fineS,
       })
@@ -118,6 +137,9 @@ export function planPasses(
       if (oldestEpochMs === null || r.epochMs < oldestEpochMs) oldestEpochMs = r.epochMs
       for (const p of r.passes) {
         count++
+        const sunDeg = sunAltitudeDeg(new Date(p.closestMs), lat, lng)
+        const dark = def.kind === '光學' && sunDeg < MIN_OPTICAL_SUN_DEG
+        if (!dark) lit++
         passes.push({
           satId: m.id,
           satName: def.name,
@@ -131,6 +153,10 @@ export function planPasses(
           endMs: p.endMs,
           closestKm: p.closestKm,
           closestMs: p.closestMs,
+          band,
+          xtKm: p.xtKm ?? null,
+          sunDeg,
+          dark,
           epochMs: r.epochMs,
           line1: rec.line1,
           line2: rec.line2,
@@ -142,8 +168,8 @@ export function planPasses(
       satId: m.id,
       satName: def.name,
       emoji: def.emoji,
-      // 有 TLE 卻一顆都推不動 → 是壞掉，不是沒有過境
-      state: usable === 0 ? 'badTle' : count > 0 ? 'passes' : 'none',
+      // 有 TLE 卻一顆都推不動 → 是壞掉，不是沒有過境；有掃到但全在夜間 → 光學拍不到
+      state: usable === 0 ? 'badTle' : count === 0 ? 'none' : lit === 0 ? 'darkOnly' : 'passes',
       count,
     })
   }
@@ -196,6 +222,8 @@ export interface SatPassOverlay {
   label: string
   craft: string
   swathKm: number
+  /** 掃描帶（側視雷達在一側）；地圖照這個畫，不再假設以軌跡為中心。 */
+  band: Band
   startMs: number
   endMs: number
   closestMs: number
@@ -219,6 +247,7 @@ export function toOverlay(p: PlannedPass, label: string): SatPassOverlay {
     label,
     craft: p.craft,
     swathKm: p.swathKm,
+    band: p.band,
     startMs: p.startMs,
     endMs: p.endMs,
     closestMs: p.closestMs,
@@ -234,5 +263,16 @@ export function toOverlay(p: PlannedPass, label: string): SatPassOverlay {
  * 使用者要拿這個決定派不派船，邊緣和正中間的意義完全不同，必須標出來。
  */
 export function isGrazing(p: PlannedPass, frac = 0.8): boolean {
+  // 側視雷達：離帶的近端或遠端太近（帶寬的 10% 以內）就算擦邊
+  if (p.xtKm !== null) {
+    const w = p.band.maxKm - p.band.minKm
+    return Math.min(p.xtKm - p.band.minKm, p.band.maxKm - p.xtKm) < w * (1 - frac) * 0.5
+  }
   return p.closestKm > (p.swathKm / 2) * frac
+}
+
+/** 側視雷達這一趟目標在哪一側，講成人話：「軌跡右側 480 公里處」。 */
+export function sideText(p: PlannedPass, fmt: (km: number) => string): string | null {
+  if (p.xtKm === null) return null
+  return `目標在衛星軌跡${p.xtKm >= 0 ? '右' : '左'}側 ${fmt(Math.abs(p.xtKm))}（雷達側視，正下方拍不到）`
 }

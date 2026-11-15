@@ -132,15 +132,60 @@ export function splitAtDateline(track: TrackPoint[]): TrackPoint[][] {
   return segs
 }
 
+// ── 掃描帶在軌跡的哪一側 ──────────────────────────────────
+//
+// 光學衛星（推掃式）拍的是正下方左右對稱的一條帶。雷達不是：
+// 合成孔徑雷達是「側視」的，正下方根本拍不到，整條掃描帶在軌跡的一側。
+// Sentinel-1 是右側視，IW 模式的帶在飛行方向右邊約 340–620 公里。
+// 以前把它當成正下方左右各 125 公里，預報的雷達過境大多算在錯的位置。
+
 /**
- * 掃幅的左右邊界。感測器掃的是軌跡兩側各 swathKm/2 的帶狀範圍。
+ * 掃描帶相對地面軌跡的橫向範圍（公里）。正值＝飛行方向右側，負值＝左側。
+ * 光學是 [-半寬, +半寬]；側視雷達整段同號。
+ */
+export interface Band {
+  minKm: number
+  maxKm: number
+}
+
+/** 數字（掃幅寬）當成以軌跡為中心的對稱帶。 */
+export function toBand(swath: number | Band): Band {
+  return typeof swath === 'number' ? { minKm: -swath / 2, maxKm: swath / 2 } : swath
+}
+
+function symmetric(b: Band): boolean {
+  return Math.abs(b.minKm + b.maxKm) < 1e-9
+}
+
+const EARTH_R_KM = 6371
+
+/**
+ * 側視雷達的地面掃描帶：由軌道高度與入射角範圍（地面上量的）用球面幾何算。
+ * 入射角 θ 的點：看下去的角度 sinβ = R/(R+h)·sinθ，地心角 γ = θ − β，地面距離 = R·γ。
+ */
+export function sarBand(altKm: number, incNearDeg: number, incFarDeg: number, side: 'right' | 'left'): Band {
+  const ground = (inc: number) => {
+    const look = Math.asin((EARTH_R_KM / (EARTH_R_KM + altKm)) * Math.sin(inc * DEG))
+    return EARTH_R_KM * (inc * DEG - look)
+  }
+  const near = ground(incNearDeg)
+  const far = ground(incFarDeg)
+  return side === 'right' ? { minKm: near, maxKm: far } : { minKm: -far, maxKm: -near }
+}
+
+function offsetPoint(lat: number, lng: number, brg: number, km: number): [number, number] {
+  return km >= 0 ? destPoint(lat, lng, brg + 90, km) : destPoint(lat, lng, brg - 90, -km)
+}
+
+/**
+ * 掃描帶的兩條邊。對稱的光學帶就是軌跡左右各半寬；側視雷達兩條邊都在同一側。
  * 回傳的 right 已經反轉過，left ++ right 直接就是一個封閉多邊形。
  */
 export function swathEdges(
   track: TrackPoint[],
-  swathKm: number,
+  swath: number | Band,
 ): { left: [number, number][]; right: [number, number][] } {
-  const half = swathKm / 2
+  const band = toBand(swath)
   const left: [number, number][] = []
   const right: [number, number][] = []
   for (let k = 0; k < track.length; k++) {
@@ -150,10 +195,27 @@ export function swathEdges(
     const b = track[Math.min(track.length - 1, k + 1)]
     if (a === b) continue
     const brg = bearingDeg(a.lat, a.lng, b.lat, b.lng)
-    left.push(destPoint(p.lat, p.lng, brg - 90, half))
-    right.push(destPoint(p.lat, p.lng, brg + 90, half))
+    left.push(offsetPoint(p.lat, p.lng, brg, band.minKm))
+    right.push(offsetPoint(p.lat, p.lng, brg, band.maxKm))
   }
   return { left, right: right.reverse() }
+}
+
+/**
+ * 目標相對某段軌跡的位置：橫向（正＝右側）與沿軌（正＝前方）距離，公里，球面公式。
+ */
+export function crossAlong(
+  p: { lat: number; lng: number },
+  trackBrgDeg: number,
+  lat: number,
+  lng: number,
+): { xt: number; at: number } {
+  const d = distanceKm(p.lat, p.lng, lat, lng) / EARTH_R_KM
+  const rel = (bearingDeg(p.lat, p.lng, lat, lng) - trackBrgDeg) * DEG
+  const xtAng = Math.asin(Math.max(-1, Math.min(1, Math.sin(d) * Math.sin(rel))))
+  const c = Math.cos(d) / Math.max(1e-12, Math.cos(xtAng))
+  const atAng = Math.acos(Math.max(-1, Math.min(1, c))) * Math.sign(Math.cos(rel) || 1)
+  return { xt: xtAng * EARTH_R_KM, at: atAng * EARTH_R_KM }
 }
 
 /** 軌跡上離某個點最近的位置與距離。 */
@@ -196,10 +258,12 @@ export interface PassWindow {
   startMs: number
   /** 離開掃幅的時刻（毫秒）。 */
   endMs: number
-  /** 這一趟最接近目標的距離（公里）。 */
+  /** 這一趟最接近目標的距離（公里）。側視雷達是「正對目標」那一刻目標離軌跡的橫向距離。 */
   closestKm: number
-  /** 最接近的時刻（毫秒）。 */
+  /** 最接近的時刻（毫秒）；側視雷達是目標正好在衛星側面的那一刻。 */
   closestMs: number
+  /** 側視雷達：正對時目標的橫向位置（公里，正＝右側）。對稱的光學帶沒有這個。 */
+  xtKm?: number
 }
 
 /**
@@ -213,11 +277,13 @@ export interface PassWindow {
  */
 export function findPasses(
   track: TrackPoint[],
-  swathKm: number,
+  swath: number | Band,
   lat: number,
   lng: number,
 ): PassWindow[] {
-  const half = swathKm / 2
+  const band = toBand(swath)
+  if (!symmetric(band)) return findBandPasses(track, band, lat, lng)
+  const half = band.maxKm
   const out: PassWindow[] = []
   let cur: PassWindow | null = null
 
@@ -239,5 +305,49 @@ export function findPasses(
     }
   }
   if (cur) out.push(cur)
+  return out
+}
+
+/**
+ * 側視雷達的過境：目標落在掃描帶的橫向範圍內、而且沿軌方向在衛星側面附近，就算掃到。
+ * 沿軌容許半個帶寬，讓一趟的時間長度跟同寬的光學帶差不多（都是「掃描帶經過目標」的那段時間）。
+ */
+function findBandPasses(track: TrackPoint[], band: Band, lat: number, lng: number): PassWindow[] {
+  const halfAlong = (band.maxKm - band.minKm) / 2
+  const reach = Math.hypot(Math.max(Math.abs(band.minKm), Math.abs(band.maxKm)), halfAlong)
+  const out: PassWindow[] = []
+  let cur: (PassWindow & { bestAt: number }) | null = null
+  for (let k = 0; k < track.length; k++) {
+    const p = track[k]
+    const a = track[Math.max(0, k - 1)]
+    const b = track[Math.min(track.length - 1, k + 1)]
+    let inside = false
+    let xt = 0
+    let at = Infinity
+    if (a !== b && distanceKm(lat, lng, p.lat, p.lng) <= reach) {
+      ;({ xt, at } = crossAlong(p, bearingDeg(a.lat, a.lng, b.lat, b.lng), lat, lng))
+      inside = xt >= band.minKm && xt <= band.maxKm && Math.abs(at) <= halfAlong
+    }
+    if (inside) {
+      if (!cur) cur = { startMs: p.at, endMs: p.at, closestKm: Math.abs(xt), closestMs: p.at, xtKm: xt, bestAt: Math.abs(at) }
+      else {
+        cur.endMs = p.at
+        if (Math.abs(at) < cur.bestAt) {
+          cur.bestAt = Math.abs(at)
+          cur.closestKm = Math.abs(xt)
+          cur.closestMs = p.at
+          cur.xtKm = xt
+        }
+      }
+    } else if (cur) {
+      const { bestAt: _drop, ...w } = cur
+      out.push(w)
+      cur = null
+    }
+  }
+  if (cur) {
+    const { bestAt: _drop, ...w } = cur
+    out.push(w)
+  }
   return out
 }
