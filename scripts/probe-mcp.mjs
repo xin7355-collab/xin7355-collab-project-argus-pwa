@@ -1,5 +1,6 @@
-// 檢查部署後的 MCP 連接器（手動觸發，見 .github/workflows/mcp-probe.yml）。
-// 從 GitHub 伺服器用兩種世代的用戶端各走一遍：舊版 initialize 握手、新版 2026-07-28（server/discover）。
+// 檢查部署後的 MCP 連接器與語音助理端點（手動觸發，見 .github/workflows/mcp-probe.yml）。
+// 從 GitHub 伺服器用兩種世代的用戶端各走一遍：舊版 initialize 握手、新版 2026-07-28（server/discover）；
+// 再確認 /api/ai 有回應（不帶通行碼，不會用到任何 AI 額度）。
 // 只用公開地標（基隆港、彭佳嶼）；不讀任何 Secret；紀錄只印結果摘要。
 const URL_ = process.env.MCP_URL || 'https://argus-app.xin7355.workers.dev/mcp'
 let failed = false
@@ -55,4 +56,10 @@ const g = await fetch(URL_, { method: 'GET', signal: AbortSignal.timeout(20000) 
 ok('GET → 405', g.status === 405)
 r = await post({ jsonrpc: '2.0', id: 6, method: 'tools/list' }, { origin: 'https://evil.example' })
 ok('別的網站 Origin → 403', r.status === 403)
+// 語音助理端點：不帶通行碼。還沒設定金鑰時應回 503＋code unconfigured，設好了應回 401（通行碼不對）。
+// 兩種都代表 /api/ai 在正式環境載得起來（AI 路由模組有打包成功）；其他狀態才是壞掉。
+const aiUrl = new URL('/api/ai', URL_).toString()
+const ai = await fetch(aiUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: 'ping' }), signal: AbortSignal.timeout(20000) })
+const aj = await ai.json().catch(() => null)
+ok('語音助理端點有回應（還沒設定 503／設好了 401）', (ai.status === 503 && aj?.code === 'unconfigured') || ai.status === 401, `HTTP ${ai.status}${aj?.code ? ' ' + aj.code : ''}`)
 process.exit(failed ? 1 : 0)
