@@ -170,6 +170,8 @@ interface TacticalState {
   aisAgeMs: number | null
   /** AIS 連線診斷（每條連線結束時更新），面板用來講「到底卡在哪」。 */
   aisDiag: (Diagnosis & { history: ConnAttempt[] }) | null
+  /** 手機按了 3D 地球：先問要不要開（內容是為什麼可能跑不動）。null＝沒在問。 */
+  globeAsk: string | null
   /** 分享連結指定要追蹤的船（MMSI）：AIS 圖層一收到這艘就開它的資訊、飛過去，然後清掉。 */
   focusMmsi: string | null
   /** 「測試金鑰」：按一次 tick+1，AisLayer 收到就跑；結果放 aisKeyTest。 */
@@ -408,6 +410,7 @@ interface TacticalState {
   setAisFresh: (usable: boolean, ageMs: number | null) => void
   setAisDiag: (d: TacticalState['aisDiag']) => void
   setFocusMmsi: (mmsi: string | null) => void
+  setGlobeAsk: (why: string | null) => void
   requestAisKeyTest: () => void
   setAisKeyTest: (r: TacticalState['aisKeyTest']) => void
   setShowBoatLights: (b: boolean) => void
@@ -596,6 +599,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   aisAgeMs: null,
   aisDiag: null,
   focusMmsi: null,
+  globeAsk: null,
   aisKeyTestTick: 0,
   aisKeyTest: { running: false, text: '' },
   showBoatLights: false,
@@ -795,6 +799,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   setAisFresh: (usable, ageMs) => set({ aisUsable: usable, aisAgeMs: ageMs }),
   setAisDiag: (d) => set({ aisDiag: d }),
   setFocusMmsi: (mmsi) => set({ focusMmsi: mmsi }),
+  setGlobeAsk: (why) => set({ globeAsk: why }),
   requestAisKeyTest: () => set((st) => ({ aisKeyTestTick: st.aisKeyTestTick + 1 })),
   setAisKeyTest: (r) => set({ aisKeyTest: r }),
   setShowBoatLights: (b) => set({ showBoatLights: b }),

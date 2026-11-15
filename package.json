@@ -1,7 +1,7 @@
 {
   "name": "project-argus-pwa",
   "private": true,
-  "version": "2.47.0",
+  "version": "2.48.0",
   "type": "module",
   "description": "Tactical Earth Observation & Edge AI - 海域觀測 PWA",
   "scripts": {
@@ -12,6 +12,7 @@
     "test": "node --experimental-strip-types --test src/lib/*.test.ts"
   },
   "dependencies": {
+    "cesium": "1.146.0",
     "leaflet": "^1.9.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -30,5 +31,10 @@
     "vite": "^8.2.1",
     "vite-plugin-pwa": "^1.3.0",
     "wrangler": "^4.121.0"
+  },
+  "overrides": {
+    "@cesium/engine": "26.4.0",
+    "@cesium/widgets": "16.3.0",
+    "@cesium/core": "0.1.0"
   }
 }

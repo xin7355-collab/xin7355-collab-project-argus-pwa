@@ -4,6 +4,7 @@ import { fmtClock, driftEpoch, fmtDayHour } from '../lib/timefmt'
 import { modeMeta } from '../lib/launcher'
 import { BottomSheet } from './BottomSheet'
 import { Launcher, LauncherPeek } from './Launcher'
+import { openGlobe } from './useLaunch'
 import { OpticalControls } from './OpticalControls'
 import { SarControls } from './SarControls'
 import { AisControls } from './AisControls'
@@ -71,6 +72,16 @@ function ModeHeader({ onEnd }: { onEnd: () => void }) {
           <div className="truncate text-base font-bold text-tactical-cyan">{meta?.label}</div>
           <div className="truncate text-[0.6875rem] text-slate-400">{meta?.hint}</div>
         </div>
+        {/* 看船、看衛星時可以直接切 3D，不用先結束模式（結束了船位就不再更新） */}
+        {(mode === 'ais' || mode === 'orbit') && (
+          <button
+            onClick={openGlobe}
+            className="shrink-0 rounded-full border border-slate-600 bg-slate-800/80 px-3 py-1.5 text-xs font-bold text-slate-200 active:scale-95"
+            aria-label="用 3D 地球看"
+          >
+            🌐 3D
+          </button>
+        )}
         <button
           onClick={onEnd}
           className="shrink-0 rounded-full border border-slate-600 bg-slate-800/80 px-3 py-1.5 text-xs font-bold text-slate-200 active:scale-95"

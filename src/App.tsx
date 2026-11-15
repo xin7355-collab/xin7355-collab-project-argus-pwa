@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { MapContainer } from './map/MapContainer'
 import { Dashboard } from './components/Dashboard'
 import { SearchBar } from './components/SearchBar'
@@ -25,6 +25,10 @@ import { applyUiScale } from './lib/uiScale'
 import { useTacticalStore } from './store/tacticalStore'
 import { useSentinelCheck } from './components/useSentinelCheck'
 import { useShareLink } from './components/useShareLink'
+import { GlobeAsk } from './components/GlobeAsk'
+
+// 3D 地球整個延遲載入：沒按「🌐 3D 地球」的人（大多數手機使用者）一個位元組都不用下載
+const GlobeView = lazy(() => import('./globe/GlobeView'))
 
 export default function App() {
   const uiScale = useTacticalStore((s) => s.uiScale)
@@ -34,6 +38,7 @@ export default function App() {
   }, [uiScale])
   useSentinelCheck()
   useShareLink()
+  const globeOpen = useTacticalStore((s) => s.openTool === 'globe')
 
   return (
     <div className="app-shell relative h-full w-full bg-tactical-bg text-slate-200">
@@ -66,6 +71,16 @@ export default function App() {
       <DrPanel />
       <SecureUnlock />
       <Dashboard />
+      <GlobeAsk />
+      {globeOpen && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black text-sm text-slate-300">⏳ 載入 3D 地球…</div>
+          }
+        >
+          <GlobeView />
+        </Suspense>
+      )}
     </div>
   )
 }

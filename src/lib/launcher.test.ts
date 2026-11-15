@@ -60,3 +60,9 @@ test('模式標題列拿得到圖示與名稱；工具不算模式', () => {
   assert.equal(modeMeta('ais')?.label, 'AIS 船位')
   assert.equal(modeMeta('basic'), undefined)
 })
+
+test('桌機功能有標記（手機上格子會標「桌機」），說明要提到電腦', () => {
+  const desk = all.filter((i) => i.desktop)
+  assert.deepEqual(desk.map((i) => i.id), ['globe'])
+  for (const i of desk) assert.match(i.hint, /電腦/)
+})

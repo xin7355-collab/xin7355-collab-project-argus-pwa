@@ -1,9 +1,11 @@
+import { useMemo } from 'react'
 import { useTacticalStore } from '../store/tacticalStore'
+import { classifyDevice, readDeviceFacts } from '../lib/device'
 import { visibleGroups, findItem, PEEK_IDS, type LaunchItem } from '../lib/launcher'
 import { launch } from './useLaunch'
 import { VersionTag } from './VersionTag'
 
-function Tile({ item, badge, accent, on }: { item: LaunchItem; badge?: number; accent?: boolean; on?: boolean }) {
+function Tile({ item, badge, accent, on, desk }: { item: LaunchItem; badge?: number; accent?: boolean; on?: boolean; desk?: boolean }) {
   return (
     <button
       onClick={() => launch(item)}
@@ -18,6 +20,9 @@ function Tile({ item, badge, accent, on }: { item: LaunchItem; badge?: number; a
       }`}
     >
       {on ? <span className="absolute left-1.5 top-1 text-[0.5625rem] font-bold text-tactical-green">開</span> : null}
+      {desk ? (
+        <span className="absolute left-1 top-1 rounded bg-slate-700 px-1 text-[0.5rem] font-bold leading-[0.875rem] text-slate-200">桌機</span>
+      ) : null}
       {badge ? (
         <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-tactical-cyan px-1 text-[0.5625rem] font-bold text-slate-900">
           {badge}
@@ -61,6 +66,8 @@ export function Launcher() {
   const groups = visibleGroups({ radarLocked })
   // 開關型的格子：開著時亮綠框、角落標「開」，不然看不出按了有沒有效
   const toggles: Record<string, boolean> = { aircraft: showAircraft, gnss: showGnss }
+  // 桌機功能在手機、平板上標「桌機」（電腦上不標，免得看起來像少了什麼）
+  const onDesktop = useMemo(() => classifyDevice(readDeviceFacts()).kind === 'desktop', [])
 
   // 各工具的資料筆數：一眼看出哪些已經在用
   const badge: Record<string, number> = {
@@ -77,7 +84,14 @@ export function Launcher() {
           <h3 className="mb-1.5 text-[0.6875rem] font-bold text-slate-400">{g.title}</h3>
           <div className="grid grid-cols-4 gap-1.5">
             {g.items.map((it) => (
-              <Tile key={it.id} item={it} badge={badge[it.id]} accent={it.id === 'quickscan'} on={toggles[it.id]} />
+              <Tile
+                key={it.id}
+                item={it}
+                badge={badge[it.id]}
+                accent={it.id === 'quickscan'}
+                on={toggles[it.id]}
+                desk={it.desktop && !onDesktop}
+              />
             ))}
           </div>
         </section>

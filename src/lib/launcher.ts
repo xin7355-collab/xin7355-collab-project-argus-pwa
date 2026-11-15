@@ -24,6 +24,8 @@ export interface LaunchItem {
   label: string
   /** 長按或模式標題列上的一句話說明。 */
   hint: string
+  /** 桌機功能：手機上格子標「桌機」，按了先說明再讓使用者決定。 */
+  desktop?: boolean
 }
 
 export interface LaunchGroup {
@@ -107,6 +109,7 @@ export const GROUPS: LaunchGroup[] = [
     items: [
       t('layers', '🗂️', '圖層', '界線、天氣、航道、自訂點位疊圖'),
       t('offline', '⬇️', '離線地圖', '下載目前畫面，沒訊號也能看'),
+      { ...a('globe', '🌐', '3D 地球', '立體地球看船、飛機（真實高度）、衛星（軌道高度），含導演鏡頭；電腦上最順'), desktop: true },
       a('settings', '⚙️', '設定', '金鑰、字體大小、距離單位、備份'),
     ],
   },
