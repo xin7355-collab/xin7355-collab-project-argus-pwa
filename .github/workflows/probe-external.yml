@@ -1,4 +1,4 @@
-# 暫時性：確認外部服務（GIBS、adsb.lol、氣象署、Photon、CelesTrak）的真實行為。不讀 secret，量完就刪。
+# 暫時性：比較 GIBS 各 VIIRS 夜間圖層哪個看得到漁船燈火。不讀 secret，量完就刪。
 name: 探測外部服務（暫時）
 on:
   push:
