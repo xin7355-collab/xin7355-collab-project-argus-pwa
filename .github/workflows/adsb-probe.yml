@@ -1,0 +1,18 @@
+# adsb.lol 探測（手動觸發）：從 GitHub 伺服器實際打 adsb.lol 與部署後的 /api/adsb，
+# 確認真實欄位、時間格式與 Worker 轉手。沙箱連不到外網，這是唯一能看到真實回應的地方。
+# 只用公開地標座標、不讀任何 Secret；紀錄只印數量與欄位名稱（公開 repo 的紀錄是公開的）。
+name: 探測 adsb.lol
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: node --experimental-strip-types scripts/probe-adsb.mjs
