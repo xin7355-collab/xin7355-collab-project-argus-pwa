@@ -106,14 +106,11 @@ const RAMP = ' .:-=+*#%@'
 for (const id of CANDIDATES) {
   const m = info[id]
   console.log(`\n######## ${id}\n  標題：${m?.title}｜格式：${m?.format}｜矩陣：${m?.matrix}`)
-  if (!m?.template) continue
+  if (!m?.matrix) continue
+  const ext = m.format === 'image/jpeg' ? 'jpg' : 'png'
   for (const [name, z, y, x] of TILES) {
-    const url = m.template
-      .replace('{Time}', DATE)
-      .replace('{TileMatrixSet}', m.matrix)
-      .replace('{TileMatrix}', z)
-      .replace('{TileRow}', y)
-      .replace('{TileCol}', x)
+    // 跟 App 的 gibs.ts 用同一種網址格式
+    const url = `${GIBS}/${id}/default/${DATE}/${m.matrix}/${z}/${y}/${x}.${ext}`
     const r = await fetch(url)
     const buf = Buffer.from(await r.arrayBuffer())
     console.log(`  ${name} ${DATE}：HTTP ${r.status}，${buf.length} bytes，ct=${r.headers.get('content-type')}`)
