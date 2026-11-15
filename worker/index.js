@@ -10,13 +10,15 @@
  *
  * 後來加了第二件：**幫瀏覽器代連 aisstream.io 的 AIS 即時船位**（/api/ais）。
  *
- * 之後陸續加了：氣象署代理（/api/cwa）、飛機 ADS-B 代理（/api/adsb，見 adsb.js）。
+ * 之後陸續加了：氣象署代理（/api/cwa）、飛機 ADS-B 代理（/api/adsb，見 adsb.js）、
+ * 給 Claude 等 AI 助理用的 MCP 伺服器（/mcp，見 mcp.js）。
  *
  * 其餘所有路徑原封不動交給靜態資源處理，行為跟改之前一樣。
  */
 
 import { json, withCors, originAllowed } from './http.js'
 import { proxyAdsb } from './adsb.js'
+import { handleMcp } from './mcp.js'
 
 /**
  * 只准代理這幾個 celestrak 群組。
@@ -203,6 +205,8 @@ export default {
     if (url.pathname === '/api/ais') return proxyAis(request, url, env)
 
     if (url.pathname === '/api/adsb') return proxyAdsb(request, url, env, ctx)
+
+    if (url.pathname === '/mcp') return handleMcp(request, url, env, ctx)
 
     const cwa = url.pathname.match(/^\/api\/cwa\/([A-Za-z0-9-]+)\/?$/)
     if (cwa) return proxyCwa(request, url, env, cwa[1])

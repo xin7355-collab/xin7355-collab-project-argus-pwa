@@ -1,0 +1,17 @@
+# 檢查 MCP 連接器（手動觸發）：從 GitHub 伺服器用舊版與新版兩種用戶端打部署後的 /mcp。
+# 只用公開地標座標、不讀任何 Secret；紀錄只印結果摘要（公開 repo 的紀錄是公開的）。
+name: 檢查 MCP 連接器
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: node scripts/probe-mcp.mjs

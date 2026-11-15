@@ -380,6 +380,44 @@ export function SettingsPanel() {
               )}
             </div>
 
+            {/* 給 Claude 用的 MCP 連接器：網址要能一鍵複製，iPhone 上手打很容易打錯 */}
+            <details className="mt-3 rounded-lg border border-slate-700 bg-slate-900/40 p-2">
+              <summary className="cursor-pointer text-[0.6875rem] font-semibold text-tactical-green">
+                🤖 在 Claude 裡用這個 App 的計算（MCP 連接器）
+              </summary>
+              <div className="mt-2 flex flex-col gap-1.5 text-[0.625rem] leading-relaxed text-slate-300">
+                <p>
+                  加了以後，在 Claude（網頁或 iPhone App）可以直接問「基隆港到彭佳嶼多遠、方位多少」、「目標 12 節往 045°，我 20 節怎麼攔」、
+                  「今晚幾點完全天黑」、「這附近有沒有發緊急的飛機」，由這個 App 的同一套公式算。
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <span className="min-w-0 flex-1 truncate rounded bg-slate-800 px-1.5 py-1 font-mono text-tactical-cyan">{`${window.location.origin}/mcp`}</span>
+                  <button
+                    onClick={() =>
+                      navigator.clipboard
+                        ?.writeText(`${window.location.origin}/mcp`)
+                        .then(() => setStatus('連接器網址已複製'))
+                        .catch(() => setStatus(`複製不了，請手動複製：${window.location.origin}/mcp`))
+                    }
+                    className="shrink-0 rounded border border-tactical-cyan/60 px-2 py-1 font-semibold text-tactical-cyan active:scale-95"
+                  >
+                    複製
+                  </button>
+                </div>
+                <ol className="flex list-decimal flex-col gap-1 pl-4 text-slate-400">
+                  <li>
+                    用 Safari 開 <span className="font-mono text-tactical-cyan">claude.ai</span> 並登入（Claude App 裡不能新增，只能用已經加好的）
+                  </li>
+                  <li>設定 → 連接器（Connectors）→ 新增自訂連接器（Add custom connector）</li>
+                  <li>名稱填「阿爾戈斯」，網址貼上面那串，不用填登入資料 → 新增</li>
+                  <li>之後在 Claude App 的對話裡打開這個連接器就能用</li>
+                </ol>
+                <p className="text-slate-500">
+                  只做計算，加上查 adsb.lol 的公開飛機資料；不會讀你存在這支手機的點位或金鑰。詳細見 docs/MCP連接器.md。
+                </p>
+              </div>
+            </details>
+
             {/* #5 匯出 / 匯入 備份 */}
             <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/40 p-2">
               <div className="mb-1 text-[0.6875rem] font-semibold text-tactical-green">💾 備份 / 還原</div>

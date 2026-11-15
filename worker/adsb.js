@@ -18,38 +18,36 @@ const FRESH_SECONDS = 12
 const BACKUP_SECONDS = 30 * 60
 const TIMEOUT_MS = 10_000
 
-/** 把快取裡的回應交出去：補上「現在已經多舊」，給瀏覽器的一律不快取。 */
-function serve(res, stale) {
-  const r = new Response(res.body, res)
-  const sourceMs = Number(r.headers.get('x-source-now'))
-  if (Number.isFinite(sourceMs) && sourceMs > 0) {
-    r.headers.set('x-adsb-age', String(Math.max(0, Math.round((Date.now() - sourceMs) / 1000))))
+/** adsb.lol 抓不到、也沒有備份：訊息可以直接給使用者看。 */
+export class AdsbFetchError extends Error {
+  constructor(message, status, retryAfter = null) {
+    super(message)
+    this.name = 'AdsbFetchError'
+    this.status = status
+    this.retryAfter = retryAfter
   }
-  r.headers.delete('x-source-now')
-  r.headers.set('cache-control', 'no-store')
-  if (stale) r.headers.set('x-adsb-stale', '1')
-  return withCors(r)
 }
 
-export async function proxyAdsb(request, url, env, ctx) {
-  if (request.method !== 'GET') return json({ error: '只接受 GET' }, 405)
-  if (!originAllowed(request.headers.get('origin'), url)) return json({ error: '不接受其他網站的請求' }, 403)
-  const q = url.searchParams
-  const anchor = adsbAnchor(Number(q.get('lat')), Number(q.get('lon')), Number(q.get('dist')))
-  if (!anchor) return json({ error: '位置或範圍不對（lat 緯度、lon 經度、dist 半徑浬）' }, 400)
-
+/**
+ * 拿一份飛機快照（App 的 /api/adsb 與 MCP 的 nearby_aircraft 共用，同一份快取）。
+ * 回 { text: 精簡後的 JSON 文字, sourceMs: 快照時間, stale: 是不是備份 }；
+ * 上游壞掉又沒有備份時丟 AdsbFetchError。
+ */
+export async function adsbSnapshot(anchor, env, ctx) {
   const upstream = `${env.ADSB_BASE || ADSB_BASE}/lat/${anchor.lat}/lon/${anchor.lon}/dist/${anchor.dist}`
   const cache = caches.default
   const freshKey = new Request(upstream)
   const backupKey = new Request(`${upstream}?argus-backup=1`)
-  const hit = await cache.match(freshKey)
-  if (hit) return serve(hit, false)
+  const fromCache = async (res, stale) => ({ text: await res.text(), sourceMs: Number(res.headers.get('x-source-now')), stale })
 
-  // 上游失敗：有備份就回備份（標明是舊的），沒有才回錯誤
+  const hit = await cache.match(freshKey)
+  if (hit) return fromCache(hit, false)
+
+  // 上游失敗：有備份就回備份（標明是舊的），沒有才算失敗
   const fallback = async (why, status, retryAfter) => {
     const old = await cache.match(backupKey)
-    if (old) return serve(old, true)
-    return withCors(json({ error: why }, status, retryAfter ? { 'retry-after': String(retryAfter) } : {}))
+    if (old) return fromCache(old, true)
+    throw new AdsbFetchError(why, status, retryAfter)
   }
 
   let res
@@ -77,10 +75,10 @@ export async function proxyAdsb(request, url, env, ctx) {
   const trimmed = trimAdsb(payload)
   if (!trimmed) return fallback('adsb.lol 回傳的格式不對（多半是對方暫時故障），稍後自動再試', 502)
 
-  const body = JSON.stringify(trimmed)
+  const text = JSON.stringify(trimmed)
   const sourceMs = snapshotMs(trimmed.now) ?? Date.now()
   const stored = (ttl) =>
-    new Response(body, {
+    new Response(text, {
       headers: {
         'content-type': 'application/json; charset=utf-8',
         'cache-control': `public, max-age=${ttl}`,
@@ -90,5 +88,30 @@ export async function proxyAdsb(request, url, env, ctx) {
     })
   ctx.waitUntil(cache.put(freshKey, stored(FRESH_SECONDS)))
   ctx.waitUntil(cache.put(backupKey, stored(BACKUP_SECONDS)))
-  return serve(stored(FRESH_SECONDS), false)
+  return { text, sourceMs, stale: false }
+}
+
+/** 快照多舊（秒，用伺服器時鐘算）。 */
+export const snapshotAgeSec = (sourceMs) =>
+  Number.isFinite(sourceMs) && sourceMs > 0 ? Math.max(0, Math.round((Date.now() - sourceMs) / 1000)) : 0
+
+export async function proxyAdsb(request, url, env, ctx) {
+  if (request.method !== 'GET') return json({ error: '只接受 GET' }, 405)
+  if (!originAllowed(request.headers.get('origin'), url)) return json({ error: '不接受其他網站的請求' }, 403)
+  const q = url.searchParams
+  const anchor = adsbAnchor(Number(q.get('lat')), Number(q.get('lon')), Number(q.get('dist')))
+  if (!anchor) return json({ error: '位置或範圍不對（lat 緯度、lon 經度、dist 半徑浬）' }, 400)
+  try {
+    const s = await adsbSnapshot(anchor, env, ctx)
+    const headers = {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-adsb-age': String(snapshotAgeSec(s.sourceMs)),
+    }
+    if (s.stale) headers['x-adsb-stale'] = '1'
+    return withCors(new Response(s.text, { headers }))
+  } catch (e) {
+    if (!(e instanceof AdsbFetchError)) throw e
+    return withCors(json({ error: e.message }, e.status, e.retryAfter ? { 'retry-after': String(e.retryAfter) } : {}))
+  }
 }
