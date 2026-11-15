@@ -9,6 +9,7 @@ import { LayerControl } from './LayerControl'
 import { BaseLayerControl } from './BaseLayerControl'
 import { BBoxSelector } from './BBoxSelector'
 import { AisLayer } from './AisLayer'
+import { AdsbLayer } from './AdsbLayer'
 import { RescueLayer } from './RescueLayer'
 import { SeaStateLayer } from './SeaStateLayer'
 import { EnvAnimLayer } from './EnvAnimLayer'
@@ -108,6 +109,7 @@ export function MapContainer() {
       {map && <SatPassLayer map={map} />}
       {map && <BBoxSelector map={map} />}
       {map && <AisLayer map={map} />}
+      {map && <AdsbLayer map={map} />}
       {map && <RescueLayer map={map} />}
       {map && <SeaStateLayer map={map} />}
       {map && <EnvAnimLayer map={map} />}

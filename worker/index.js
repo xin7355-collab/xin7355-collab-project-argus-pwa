@@ -10,8 +10,13 @@
  *
  * 後來加了第二件：**幫瀏覽器代連 aisstream.io 的 AIS 即時船位**（/api/ais）。
  *
+ * 之後陸續加了：氣象署代理（/api/cwa）、飛機 ADS-B 代理（/api/adsb，見 adsb.js）。
+ *
  * 其餘所有路徑原封不動交給靜態資源處理，行為跟改之前一樣。
  */
+
+import { json, withCors, originAllowed } from './http.js'
+import { proxyAdsb } from './adsb.js'
 
 /**
  * 只准代理這幾個 celestrak 群組。
@@ -114,21 +119,6 @@ async function proxyCelestrak(request, group, ctx, env) {
   return withCors(out)
 }
 
-function json(obj, status) {
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
-  })
-}
-
-/** 同源呼叫其實不需要 CORS，但本機開發是不同 port，加上去才不用特例處理。 */
-function withCors(res) {
-  const r = new Response(res.body, res)
-  r.headers.set('access-control-allow-origin', '*')
-  r.headers.set('access-control-expose-headers', 'x-tle-stale, x-fetched-at')
-  return r
-}
-
 // ── AIS 即時船位轉接（/api/ais）────────────────────────────
 //
 // aisstream.io 官方文件明講：不支援從瀏覽器直接連線（不送 CORS），建議走伺服器端代理。
@@ -143,17 +133,6 @@ function withCors(res) {
 
 /** 上游。測試時可用環境變數換成本機假伺服器。 */
 const AIS_UPSTREAM = 'https://stream.aisstream.io/v0/stream'
-
-/** 只准自己的網頁用這個轉接，不然就是一個任人使用的 aisstream 免費代理。 */
-function originAllowed(origin, url) {
-  if (!origin) return true // 非瀏覽器（例如探測腳本）不帶 Origin
-  try {
-    const h = new URL(origin).host
-    return h === url.host || /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(h)
-  } catch {
-    return false
-  }
-}
 
 async function proxyAis(request, url, env) {
   if ((request.headers.get('upgrade') || '').toLowerCase() !== 'websocket') {
@@ -222,6 +201,8 @@ export default {
     const url = new URL(request.url)
 
     if (url.pathname === '/api/ais') return proxyAis(request, url, env)
+
+    if (url.pathname === '/api/adsb') return proxyAdsb(request, url, env, ctx)
 
     const cwa = url.pathname.match(/^\/api\/cwa\/([A-Za-z0-9-]+)\/?$/)
     if (cwa) return proxyCwa(request, url, env, cwa[1])

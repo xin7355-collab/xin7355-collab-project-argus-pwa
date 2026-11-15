@@ -20,6 +20,10 @@ export function LayerManager() {
   const setShowPorts = useTacticalStore((s) => s.setShowPorts)
   const showRainRadar = useTacticalStore((s) => s.showRainRadar)
   const setShowRainRadar = useTacticalStore((s) => s.setShowRainRadar)
+  const showAircraft = useTacticalStore((s) => s.showAircraft)
+  const setShowAircraft = useTacticalStore((s) => s.setShowAircraft)
+  const showGnss = useTacticalStore((s) => s.showGnss)
+  const setShowGnss = useTacticalStore((s) => s.setShowGnss)
   const showVisibility = useTacticalStore((s) => s.showVisibility)
   const setShowVisibility = useTacticalStore((s) => s.setShowVisibility)
   const showRestricted = useTacticalStore((s) => s.showRestricted)
@@ -62,6 +66,8 @@ export function LayerManager() {
     (showMedianLine ? 1 : 0) +
     (showPorts ? 1 : 0) +
     (showRainRadar ? 1 : 0) +
+    (showAircraft ? 1 : 0) +
+    (showGnss ? 1 : 0) +
     (showVisibility ? 1 : 0) +
     (showRestricted ? 1 : 0) +
     (showEnforceLine ? 1 : 0) +
@@ -188,6 +194,27 @@ export function LayerManager() {
                     sub="燈塔/浮標/燈桿/水深等海圖記號（免金鑰）；縮小到約 50km 會消失（海圖磚特性）"
                     checked={showSeamark}
                     onToggle={() => setShowSeamark(!showSeamark)}
+                  />
+                </div>
+              </div>
+
+              {/* 空中：飛機與 GPS 干擾（同一份 adsb.lol 資料） */}
+              <div>
+                <div className="mb-1.5 text-[0.6875rem] font-semibold text-slate-400">✈️ 空中</div>
+                <div className="flex flex-col gap-1.5">
+                  <LayerCheck
+                    label="✈️ 附近飛機（ADS-B）"
+                    feed={feeds.aircraft}
+                    sub="adsb.lol（免金鑰、ODbL）；紅＝發緊急代碼、橘＝軍機、綠＝直升機。遠離陸地沒有接收站時看不到"
+                    checked={showAircraft}
+                    onToggle={() => setShowAircraft(!showAircraft)}
+                  />
+                  <LayerCheck
+                    label="📵 GPS 干擾（推估）"
+                    feed={feeds.gnss}
+                    sub="用飛機回報的定位精度畫 0.5° 格子（gpsjam 算法）：黃＝2–10%、紅＝>10% 飛機精度變差。是推估，不是直接量到干擾"
+                    checked={showGnss}
+                    onToggle={() => setShowGnss(!showGnss)}
                   />
                 </div>
               </div>

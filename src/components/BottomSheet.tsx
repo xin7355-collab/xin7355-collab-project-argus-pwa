@@ -81,6 +81,12 @@ export function BottomSheet({
     root.classList.toggle('sheet-tall', shown > vh * 0.62)
   }, [shown, vh])
 
+  // 收起時內容區看不到：設成 inert，鍵盤 Tab、iPhone 旁白就不會跑進去對著看不到的按鈕操作
+  // （跑進去時瀏覽器還會為了讓它看得到而捲動外層，整個畫面錯位）。
+  useEffect(() => {
+    if (contentRef.current) contentRef.current.inert = snap === 'peek'
+  }, [snap])
+
   // 內容區的觸控要用原生監聽：React 的 touchmove 是 passive，不能 preventDefault，
   // 擋不住清單本身的彈跳。監聽只綁一次，最新的高度與回呼從 ref 讀。
   const live = useRef<{ shown: number; hs: SnapHeights; onSnap: (s: Snap) => void }>({ shown, hs, onSnap })

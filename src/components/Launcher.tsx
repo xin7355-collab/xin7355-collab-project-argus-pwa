@@ -3,15 +3,21 @@ import { visibleGroups, findItem, PEEK_IDS, type LaunchItem } from '../lib/launc
 import { launch } from './useLaunch'
 import { VersionTag } from './VersionTag'
 
-function Tile({ item, badge, accent }: { item: LaunchItem; badge?: number; accent?: boolean }) {
+function Tile({ item, badge, accent, on }: { item: LaunchItem; badge?: number; accent?: boolean; on?: boolean }) {
   return (
     <button
       onClick={() => launch(item)}
       title={item.hint}
+      aria-pressed={on === undefined ? undefined : on}
       className={`relative flex min-h-[4.25rem] flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2 text-center active:scale-95 ${
-        accent ? 'border-tactical-cyan/60 bg-tactical-cyan/10' : 'border-slate-700/80 bg-slate-900/60'
+        on
+          ? 'border-tactical-green/70 bg-tactical-green/10'
+          : accent
+            ? 'border-tactical-cyan/60 bg-tactical-cyan/10'
+            : 'border-slate-700/80 bg-slate-900/60'
       }`}
     >
+      {on ? <span className="absolute left-1.5 top-1 text-[0.5625rem] font-bold text-tactical-green">開</span> : null}
       {badge ? (
         <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-tactical-cyan px-1 text-[0.5625rem] font-bold text-slate-900">
           {badge}
@@ -50,7 +56,11 @@ export function Launcher() {
   const lookouts = useTacticalStore((s) => s.lookouts)
   const radarSites = useTacticalStore((s) => s.radarSites)
   const poiPoints = useTacticalStore((s) => s.poiPoints)
+  const showAircraft = useTacticalStore((s) => s.showAircraft)
+  const showGnss = useTacticalStore((s) => s.showGnss)
   const groups = visibleGroups({ radarLocked })
+  // 開關型的格子：開著時亮綠框、角落標「開」，不然看不出按了有沒有效
+  const toggles: Record<string, boolean> = { aircraft: showAircraft, gnss: showGnss }
 
   // 各工具的資料筆數：一眼看出哪些已經在用
   const badge: Record<string, number> = {
@@ -67,7 +77,7 @@ export function Launcher() {
           <h3 className="mb-1.5 text-[0.6875rem] font-bold text-slate-400">{g.title}</h3>
           <div className="grid grid-cols-4 gap-1.5">
             {g.items.map((it) => (
-              <Tile key={it.id} item={it} badge={badge[it.id]} accent={it.id === 'quickscan'} />
+              <Tile key={it.id} item={it} badge={badge[it.id]} accent={it.id === 'quickscan'} on={toggles[it.id]} />
             ))}
           </div>
         </section>

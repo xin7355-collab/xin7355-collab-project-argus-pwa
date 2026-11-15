@@ -26,6 +26,21 @@ export function launch(item: LaunchItem) {
     case 'settings':
       st.setSettingsOpen(true)
       return
+    // 飛機、GPS 干擾是疊在地圖上的開關：打開時把抽屜收起來讓出地圖，再按一次關掉
+    case 'aircraft': {
+      const on = !st.showAircraft
+      st.setShowAircraft(on)
+      if (on) st.setSheetSnap('peek')
+      st.setStatus(on ? '✈️ 飛機：向 adsb.lol 要附近的飛機…（燈號在 🗂️ 圖層）' : '✈️ 飛機：已關閉')
+      return
+    }
+    case 'gnss': {
+      const on = !st.showGnss
+      st.setShowGnss(on)
+      if (on) st.setSheetSnap('peek')
+      st.setStatus(on ? '📵 GPS 干擾：開始累積飛機定位精度，每格至少 3 架才判斷（燈號在 🗂️ 圖層）' : '📵 GPS 干擾：已關閉')
+      return
+    }
     case 'share': {
       // 要在點擊當下就呼叫分享選單（iOS 要求使用者手勢），所以不先做任何 await
       const v = st.mapView

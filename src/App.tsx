@@ -36,7 +36,7 @@ export default function App() {
   useShareLink()
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-tactical-bg text-slate-200">
+    <div className="app-shell relative h-full w-full bg-tactical-bg text-slate-200">
       <MapContainer />
       <SearchBar />
       <SituationOverview />

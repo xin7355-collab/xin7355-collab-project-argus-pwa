@@ -12,6 +12,14 @@ body,
   font-family: system-ui, -apple-system, 'Noto Sans TC', sans-serif;
 }
 
+/* App 最外層：內容不能「被捲動」。overflow:hidden 只是藏起捲軸，瀏覽器為了讓取得焦點的元素
+   看得到（鍵盤 Tab、iPhone 旁白、程式呼叫 scrollIntoView）仍會偷偷捲它，整個畫面就往上錯位、
+   抽屜卡在半空中。clip 連程式捲動都禁止；舊版 Safari（15 以前）不認得 clip 就退回 hidden。 */
+.app-shell {
+  overflow: hidden;
+  overflow: clip;
+}
+
 /* ── 改版版面：搜尋列在上、可拖抽屜在下 ─────────────────────
    --sheet-h：抽屜目前露出多高（BottomSheet 拖曳時每格更新）。
    浮動按鈕、比例尺、版權字都跟著它往上推，永遠不會被抽屜蓋住。
@@ -424,6 +432,21 @@ html.sheet-tall .leaflet-bottom {
 .ais-vessel.ais-aton {
   font-size: 12px;
   text-shadow: none;
+}
+
+/* 飛機（ADS-B）：機頭朝北的剪影，依航向旋轉（旋轉在 inline transform） */
+.adsb-ac {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  filter: drop-shadow(0 0 2px rgba(15, 23, 42, 0.9));
+}
+/* 發緊急代碼的飛機脈動，跟 AIS 異常船同一種提醒 */
+.adsb-ac.adsb-emerg {
+  animation: pulse-alert 0.8s ease-in-out infinite;
 }
 
 /* 落海點標記（紅色脈動十字） */
