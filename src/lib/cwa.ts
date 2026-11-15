@@ -1,17 +1,16 @@
 // ── 中央氣象署 (CWA) Open Data 介接 ─────────────────────────
 //
-// 取得順序：① 瀏覽器「直連」CWA opendata（多數情況允許 CORS，只需授權碼、
-// 免部署 Worker）→ ② 若直連被擋(CORS/網路)且有設 Worker，改走 Worker 代理。
-// 這樣使用者只要有 CWA 授權碼，通常就能直接用官方資料。
+// 取得順序：① 同網域的本站 Worker（/api/cwa，授權碼放 x-cwa-key 標頭）→
+// ② 使用者自己另外架的 Worker（⚙️ 設定的 edgeAiUrl，舊設定相容）。
+// 以前第一步是瀏覽器直連氣象署、授權碼放網址：網址會留在瀏覽紀錄與錯誤訊息裡，
+// 而且氣象署沒給 CORS（實測），多半本來就連不上。詳見 worker/index.js 的 proxyCwa。
 //
 // 目前接：颱風路徑潛勢預報 W-C0034-005、潮汐 F-A0021-001、海面 F-A0012-001。
 
 import { getConfig } from './config'
 import { catOf, type Typhoon, type TyphoonPoint } from './typhoon'
 
-const CWA_BASE = 'https://opendata.cwa.gov.tw/api/v1/rest/datastore'
-
-/** 取得 CWA datastore JSON：先直連，失敗再走 Worker 代理。 */
+/** 取得 CWA datastore JSON：先走本站 Worker，失敗再走使用者自己的 Worker。 */
 export async function fetchCwaJson(
   dataset: string,
   params: Record<string, string> = {},
@@ -19,22 +18,27 @@ export async function fetchCwaJson(
   const cfg = getConfig()
   if (!cfg.cwaKey) throw new Error('需先設定 CWA 授權碼')
 
-  // ① 瀏覽器直連（免 Worker）
-  try {
-    const p = new URLSearchParams({ Authorization: cfg.cwaKey, format: 'JSON', ...params })
+  // ① 本站 Worker（授權碼走標頭）
+  let firstErr = ''
+  {
     const ctrl = new AbortController()
-    const t = setTimeout(() => ctrl.abort(), 12000)
+    const t = setTimeout(() => ctrl.abort(), 15000)
     try {
-      const res = await fetch(`${CWA_BASE}/${dataset}?${p}`, {
-        headers: { accept: 'application/json' },
+      const res = await fetch(`/api/cwa/${encodeURIComponent(dataset)}?${new URLSearchParams(params)}`, {
+        headers: { accept: 'application/json', 'x-cwa-key': cfg.cwaKey },
         signal: ctrl.signal,
       })
       if (res.ok) return await res.json()
+      const j = await res.json().catch(() => null)
+      // 授權碼錯是確定的答案，換條路也一樣錯，直接講
+      if (res.status === 401) throw new Error(j?.error || '氣象署說授權碼不對')
+      firstErr = j?.error || `HTTP ${res.status}`
+    } catch (e) {
+      if (e instanceof Error && /授權碼不對/.test(e.message)) throw e
+      firstErr ||= e instanceof DOMException && e.name === 'AbortError' ? '等了 15 秒沒回應' : '連不上本站 Worker'
     } finally {
       clearTimeout(t)
     }
-  } catch {
-    // 直連失敗（多半 CORS）→ 往下試 Worker
   }
 
   // ② Worker 代理（若有設定）
@@ -55,7 +59,7 @@ export async function fetchCwaJson(
     }
   }
 
-  throw new Error('CWA 連線失敗（直連被擋且未設 Worker）')
+  throw new Error(`氣象署資料抓不到：${firstErr}`)
 }
 
 const MS_TO_KT = 1.94384

@@ -79,8 +79,9 @@ export default {
         : heuristicDetect(bbox)
 
       return json(detections)
-    } catch (err) {
-      return json({ error: String(err?.message ?? err) }, 502)
+    } catch {
+      // 不把底層錯誤原文回給前端：看不懂，也可能帶出內部網址
+      return json({ error: '偵測服務暫時失敗，稍後再試' }, 502)
     }
   },
 }
@@ -109,8 +110,9 @@ async function proxyCwa(body, env) {
     if (!r.ok) return json({ error: `CWA ${r.status}` }, 502)
     const data = await r.json()
     return json(data)
-  } catch (err) {
-    return json({ error: String(err?.message ?? err) }, 502)
+  } catch {
+    // 不把底層錯誤原文回給前端：CWA 的網址裡有授權碼，錯誤原文可能帶出來
+    return json({ error: '連不到氣象署（網路或對方暫停服務），稍後再試' }, 502)
   }
 }
 
@@ -137,8 +139,8 @@ async function proxyCatalog(body) {
     const r = await fetch(url, { headers: { accept: 'application/json' } })
     if (!r.ok) return json({ error: `catalog ${r.status}` }, 502)
     return json(await r.json())
-  } catch (err) {
-    return json({ error: String(err?.message ?? err) }, 502)
+  } catch {
+    return json({ error: '連不到衛星目錄（網路或對方暫停服務），稍後再試' }, 502)
   }
 }
 

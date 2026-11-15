@@ -6,6 +6,7 @@ import type { HourlySeries } from '../lib/marineSeries'
 import type { Vessel } from '../lib/ais'
 import type { ConnAttempt, Diagnosis } from '../lib/aisRoute'
 import { IDLE_CHECK, type SentinelCheck } from '../lib/sentinelLayers'
+import type { FeedState, FeedStatus } from '../lib/feedState'
 import type { ImagerySourceId, OpticalSource } from '../lib/imagerySources'
 import { baseForOptical, daysEarlier, opticalForBase } from '../lib/imagerySources'
 import type { Detection } from '../lib/detection'
@@ -178,6 +179,8 @@ interface TacticalState {
   showRadarVessels: boolean
   /** Sentinel 組態檢查結果（實際有哪些圖層、ID 對不對）。影像圖層依它決定掛哪一層。 */
   sentinelCheck: SentinelCheck
+  /** 各資料來源目前的狀態（圖層面板的燈號）。鍵是來源代號，例如 fairway、visibility。 */
+  feeds: Record<string, FeedStatus>
   /** 按「重新檢查」+1。不借用 configRev：那會連 AIS 連線一起重建。 */
   sentinelCheckTick: number
 
@@ -403,6 +406,7 @@ interface TacticalState {
   setShowBoatLights: (b: boolean) => void
   setShowRadarVessels: (b: boolean) => void
   setSentinelCheck: (c: SentinelCheck) => void
+  setFeed: (id: string, state: FeedState, text: string) => void
   recheckSentinel: () => void
   setOwnPosition: (p: TacticalState['ownPosition']) => void
   toggleTrackRecording: () => void
@@ -587,6 +591,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   showBoatLights: false,
   showRadarVessels: false,
   sentinelCheck: IDLE_CHECK,
+  feeds: {},
   sentinelCheckTick: 0,
   seaStateField: 'sst',
   seaStateRange: null,
@@ -782,6 +787,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   setShowBoatLights: (b) => set({ showBoatLights: b }),
   setShowRadarVessels: (b) => set({ showRadarVessels: b }),
   setSentinelCheck: (c) => set({ sentinelCheck: c }),
+  setFeed: (id, state, text) => set((st) => ({ feeds: { ...st.feeds, [id]: { state, text, at: Date.now() } } })),
   recheckSentinel: () => set((st) => ({ sentinelCheckTick: st.sentinelCheckTick + 1 })),
   setOwnPosition: (p) => set({ ownPosition: p }),
   toggleTrackRecording: () =>

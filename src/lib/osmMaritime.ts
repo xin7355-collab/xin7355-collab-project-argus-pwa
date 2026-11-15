@@ -6,13 +6,9 @@
 // 對海上：航道＝船流動線；沙洲＝擱淺危險(常變動堆積)；海底電纜＝保護區/
 // 禁拋錨、破壞事件熱點(近年常有越界船錨損電纜)。
 
-const BBOX = '21.2,117.2,26.9,123.4' // 台灣本島＋海峽＋外島
+import { overpassQuery } from './overpassClient'
 
-const ENDPOINTS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-]
+const BBOX = '21.2,117.2,26.9,123.4' // 台灣本島＋海峽＋外島
 
 type Geom = { lat: number; lon: number }
 interface OsmEl {
@@ -27,28 +23,6 @@ export interface OsmFeature {
   coords: [number, number][]
   /** 首尾相接＝面（沙洲），否則＝線（航道/電纜）。 */
   closed: boolean
-}
-
-async function overpass(query: string): Promise<OsmEl[]> {
-  for (const ep of ENDPOINTS) {
-    try {
-      const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), 12000)
-      const res = await fetch(ep, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'data=' + encodeURIComponent(query),
-        signal: ctrl.signal,
-      })
-      clearTimeout(timer)
-      if (!res.ok) continue
-      const data = await res.json()
-      if (Array.isArray(data.elements) && data.elements.length) return data.elements
-    } catch {
-      /* try next */
-    }
-  }
-  return []
 }
 
 function coordsOf(el: OsmEl): [number, number][] | null {
@@ -68,8 +42,9 @@ function coordsOf(el: OsmEl): [number, number][] | null {
   return null
 }
 
+/** 伺服器都連不上時丟錯（訊息給人看）；空陣列才代表 OSM 上這區真的沒有。 */
 async function fetchFeatures(query: string): Promise<OsmFeature[]> {
-  const els = await overpass(query)
+  const els = (await overpassQuery(query)) as OsmEl[]
   const out: OsmFeature[] = []
   for (const el of els) {
     const coords = coordsOf(el)

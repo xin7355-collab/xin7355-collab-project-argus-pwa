@@ -8,6 +8,7 @@
 // 註：Overpass 支援瀏覽器 CORS；本抓取在使用者手機端執行(非開發沙箱)。
 
 import { WIND_FARMS } from './maritimeRef'
+import { overpassQuery } from './overpassClient'
 
 export interface OsmWindFarm {
   name: string
@@ -61,12 +62,6 @@ const TURBINE_QUERY =
   `way["power"="generator"]["generator:source"="wind"](${BBOX});` +
   `);out center tags;`
 
-const ENDPOINTS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-]
-
 function km(aLat: number, aLng: number, bLat: number, bLng: number): number {
   const dLat = (bLat - aLat) * 111
   const dLng = (bLng - aLng) * 111 * Math.cos((aLat * Math.PI) / 180)
@@ -111,42 +106,27 @@ function ringOf(el: {
   return null
 }
 
-/** 抓 OSM 台灣離岸風電場邊界；失敗回空陣列（呼叫端退回內建示意）。 */
+/**
+ * 抓 OSM 台灣離岸風電場邊界。伺服器都連不上時丟錯（OverpassError，訊息給人看），
+ * 呼叫端退回內建示意並說明；空陣列才代表 OSM 上真的沒有。
+ */
 export async function fetchWindFarmsOsm(): Promise<OsmWindFarm[]> {
-  for (const ep of ENDPOINTS) {
-    try {
-      const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), 12000)
-      const res = await fetch(ep, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'data=' + encodeURIComponent(QUERY),
-        signal: ctrl.signal,
-      })
-      clearTimeout(timer)
-      if (!res.ok) continue
-      const data = await res.json()
-      const out: OsmWindFarm[] = []
-      for (const el of data.elements ?? []) {
-        const ring = ringOf(el)
-        if (!ring || ring.length < 3) continue
-        let la = 0
-        let lo = 0
-        for (const p of ring) {
-          la += p[0]
-          lo += p[1]
-        }
-        const center: [number, number] = [la / ring.length, lo / ring.length]
-        const tags = el.tags ?? {}
-        const nm = chineseNameFor(center[0], center[1], tags['name:zh'] || tags.name || tags['seamark:name'])
-        out.push({ name: nm.name, status: nm.status, ring, center })
-      }
-      if (out.length) return out
-    } catch {
-      /* try next endpoint */
+  const out: OsmWindFarm[] = []
+  for (const el of await overpassQuery(QUERY)) {
+    const ring = ringOf(el)
+    if (!ring || ring.length < 3) continue
+    let la = 0
+    let lo = 0
+    for (const p of ring) {
+      la += p[0]
+      lo += p[1]
     }
+    const center: [number, number] = [la / ring.length, lo / ring.length]
+    const tags = el.tags ?? {}
+    const nm = chineseNameFor(center[0], center[1], tags['name:zh'] || tags.name || tags['seamark:name'])
+    out.push({ name: nm.name, status: nm.status, ring, center })
   }
-  return []
+  return out
 }
 
 /** 解析 OSM 的長度標籤（可能寫成 "120"、"120 m"、"120m"）。 */
@@ -156,41 +136,23 @@ function parseLenM(v: unknown): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined
 }
 
-/** 抓 OSM 單支風機（含高度標籤）；失敗回空陣列。 */
+/** 抓 OSM 單支風機（含高度標籤）。伺服器都連不上時丟錯，跟 fetchWindFarmsOsm 一樣。 */
 export async function fetchWindTurbinesOsm(): Promise<WindTurbine[]> {
-  for (const ep of ENDPOINTS) {
-    try {
-      const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), 15000)
-      const res = await fetch(ep, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'data=' + encodeURIComponent(TURBINE_QUERY),
-        signal: ctrl.signal,
-      })
-      clearTimeout(timer)
-      if (!res.ok) continue
-      const data = await res.json()
-      const out: WindTurbine[] = []
-      for (const el of data.elements ?? []) {
-        // node 直接有 lat/lon；way 用 out center 取得 center.lat/lon
-        const la = el.lat ?? el.center?.lat
-        const lo = el.lon ?? el.center?.lon
-        if (typeof la !== 'number' || typeof lo !== 'number') continue
-        const tags = el.tags ?? {}
-        out.push({
-          lat: la,
-          lng: lo,
-          heightM: parseLenM(tags.height),
-          rotorM: parseLenM(tags['rotor:diameter']),
-        })
-      }
-      if (out.length) return out
-    } catch {
-      /* try next endpoint */
-    }
+  const out: WindTurbine[] = []
+  for (const el of await overpassQuery(TURBINE_QUERY)) {
+    // node 直接有 lat/lon；way 用 out center 取得 center.lat/lon
+    const la = el.lat ?? el.center?.lat
+    const lo = el.lon ?? el.center?.lon
+    if (typeof la !== 'number' || typeof lo !== 'number') continue
+    const tags = el.tags ?? {}
+    out.push({
+      lat: la,
+      lng: lo,
+      heightM: parseLenM(tags.height),
+      rotorM: parseLenM(tags['rotor:diameter']),
+    })
   }
-  return []
+  return out
 }
 
 /**

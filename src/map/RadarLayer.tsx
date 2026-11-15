@@ -185,7 +185,13 @@ export function WindClutterLayer({ map }: { map: L.Map }) {
       .then(([f, t]) => {
         if (!cancelled && f.length) setFarms(attachTurbines(f, t))
       })
-      .catch(() => {})
+      .catch((e) => {
+        // 退回內建示意範圍照算，但要講：遮蔽範圍是概略的，不是 OSM 的精準邊界
+        if (!cancelled)
+          useTacticalStore
+            .getState()
+            .setStatus(`雷達遮蔽：風場用內建示意範圍估。${e instanceof Error ? e.message : ''}`)
+      })
     return () => {
       cancelled = true
     }

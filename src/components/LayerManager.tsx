@@ -1,4 +1,5 @@
 import { useTacticalStore } from '../store/tacticalStore'
+import { FEED_LOOK, type FeedStatus } from '../lib/feedState'
 import { BaseStylePicker } from './BaseStylePicker'
 
 /**
@@ -47,6 +48,7 @@ export function LayerManager() {
   const setPoiHidden = useTacticalStore((s) => s.setPoiHidden)
   const poiPoints = useTacticalStore((s) => s.poiPoints)
   const clearAllOverlays = useTacticalStore((s) => s.clearAllOverlays)
+  const feeds = useTacticalStore((s) => s.feeds)
   const openTool = useTacticalStore((s) => s.openTool)
   const setOpenTool = useTacticalStore((s) => s.setOpenTool)
   const open = openTool === 'layers'
@@ -142,6 +144,7 @@ export function LayerManager() {
                 <div className="flex flex-col gap-1.5">
                   <LayerCheck
                     label="🌀 離岸風電場"
+                    feed={feeds.windFarms}
                     sub="西部外海離岸風電場示意範圍＋風機（作業區/限制航行/避碰熱點）"
                     checked={showWindFarms}
                     onToggle={() => setShowWindFarms(!showWindFarms)}
@@ -161,18 +164,21 @@ export function LayerManager() {
                 <div className="flex flex-col gap-1.5">
                   <LayerCheck
                     label="🚢 航道／分道通航"
+                    feed={feeds.fairway}
                     sub="OSM 航道/TSS 航線；研判可疑船是否偏離正常商船動線"
                     checked={showFairway}
                     onToggle={() => setShowFairway(!showFairway)}
                   />
                   <LayerCheck
                     label="⚡ 海底電纜"
+                    feed={feeds.cable}
                     sub="OSM 海底電纜路由（洋紅線）；電纜保護區/禁拋錨、監控越界船拋錨損纜"
                     checked={showCable}
                     onToggle={() => setShowCable(!showCable)}
                   />
                   <LayerCheck
                     label="🏖️ 沙洲／淺灘"
+                    feed={feeds.shoal}
                     sub="外傘頂洲等沙洲淺灘（OSM＋內建）；擱淺危險，會隨潮汐堆積移動"
                     checked={showShoal}
                     onToggle={() => setShowShoal(!showShoal)}
@@ -192,18 +198,21 @@ export function LayerManager() {
                 <div className="flex flex-col gap-1.5">
                   <LayerCheck
                     label="🌧️ 即時降雨雷達"
+                    feed={feeds.rainRadar}
                     sub="全球雷達回波（RainViewer，免金鑰）；出海避雷雨用"
                     checked={showRainRadar}
                     onToggle={() => setShowRainRadar(!showRainRadar)}
                   />
                   <LayerCheck
                     label="🌬️ 風向風速（海況）"
+                    feed={feeds.wind}
                     sub="即時風向風速箭頭（Open-Meteo，免金鑰）；平移地圖自動更新"
                     checked={showWind}
                     onToggle={() => setShowWind(!showWind)}
                   />
                   <LayerCheck
                     label="🌫️ 能見度／霧況"
+                    feed={feeds.visibility}
                     sub="即時能見度上色（Open-Meteo，免金鑰）；濃霧最紅＝目視/瞭望偵蒐距離受限，倚重雷達/AIS"
                     checked={showVisibility}
                     onToggle={() => setShowVisibility(!showVisibility)}
@@ -260,12 +269,16 @@ function LayerCheck({
   sub,
   checked,
   onToggle,
+  feed,
 }: {
   label: string
   sub: string
   checked: boolean
   onToggle: () => void
+  /** 這個圖層資料來源的狀態；打勾時顯示在說明下面（關掉時不顯示舊的狀態）。 */
+  feed?: FeedStatus
 }) {
+  const look = feed ? FEED_LOOK[feed.state] : null
   return (
     <button
       onClick={onToggle}
@@ -283,6 +296,11 @@ function LayerCheck({
       <span className="flex flex-col">
         <span className={`text-xs font-semibold ${checked ? 'text-tactical-cyan' : 'text-slate-200'}`}>{label}</span>
         <span className="text-[0.625rem] leading-snug text-slate-400">{sub}</span>
+        {checked && feed && look && (
+          <span className={`mt-0.5 text-[0.625rem] leading-snug ${look.cls}`}>
+            {look.dot} {look.label}：{feed.text}
+          </span>
+        )}
       </span>
     </button>
   )

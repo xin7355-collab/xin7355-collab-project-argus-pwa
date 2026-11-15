@@ -177,11 +177,54 @@ async function proxyAis(request, url, env) {
   }
 }
 
+// ── 中央氣象署 Open Data 代理（/api/cwa/{資料集}）──────────────────
+//
+// 以前 App 直接從瀏覽器打氣象署，授權碼放在網址（?Authorization=…）——網址會出現在
+// 瀏覽紀錄、錯誤訊息、各種記錄裡，違反「金鑰只走標頭」；而且氣象署沒給 CORS（實測 401 回應
+// 沒有 Access-Control-Allow-Origin），瀏覽器直連多半本來就不通。
+// 改成：App 把授權碼放在 x-cwa-key 標頭交給同網域的這支 Worker，由這裡去問氣象署。
+// 氣象署文件與教學只寫了放網址的用法（放標頭是否支援沒查到官方說明），所以伺服器這段仍放網址，
+// 但只在 Cloudflare 內部，不回給瀏覽器、也不寫進錯誤訊息。
+// 有設 Worker secret CWA_KEY 的話優先用它（App 那邊就不用填）。
+
+const CWA_BASE = 'https://opendata.cwa.gov.tw/api/v1/rest/datastore'
+
+async function proxyCwa(request, url, env, dataset) {
+  if (request.method !== 'GET') return json({ error: '只接受 GET' }, 405)
+  if (!originAllowed(request.headers.get('origin'), url)) return json({ error: '不接受其他網站的請求' }, 403)
+  // 資料集代碼長這樣：F-C0032-001、W-C0034-005、O-A0001-001
+  if (!/^[A-Z]-[A-Z0-9]{1,6}-\d{3}$/.test(dataset)) return json({ error: `資料集代碼「${dataset}」格式不對` }, 400)
+  const key = env.CWA_KEY || request.headers.get('x-cwa-key') || ''
+  if (!key) return json({ error: '還沒設定氣象署授權碼（⚙️ 設定 → CWA 授權碼）' }, 400)
+  const params = new URLSearchParams({ format: 'JSON' })
+  for (const [k, v] of url.searchParams) {
+    // 只轉送一般查詢參數；授權碼一律由標頭／secret 帶，網址上的不收
+    if (/^[A-Za-z]{1,30}$/.test(k) && k.toLowerCase() !== 'authorization') params.set(k, v.slice(0, 200))
+  }
+  params.set('Authorization', key)
+  let res
+  try {
+    res = await fetch(`${env.CWA_BASE || CWA_BASE}/${dataset}?${params}`, { headers: { accept: 'application/json' } })
+  } catch {
+    return json({ error: '連不到氣象署（網路或對方暫停服務），稍後再試' }, 502)
+  }
+  if (res.status === 401 || res.status === 403) {
+    return json({ error: '氣象署說授權碼不對：到氣象署開放資料平台確認授權碼，重新複製貼到 ⚙️ 設定' }, 401)
+  }
+  if (!res.ok) return json({ error: `氣象署回應 ${res.status}，稍後再試` }, 502)
+  return new Response(res.body, {
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  })
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
 
     if (url.pathname === '/api/ais') return proxyAis(request, url, env)
+
+    const cwa = url.pathname.match(/^\/api\/cwa\/([A-Za-z0-9-]+)\/?$/)
+    if (cwa) return proxyCwa(request, url, env, cwa[1])
 
     const m = url.pathname.match(/^\/api\/celestrak\/([A-Za-z0-9_-]+)\/?$/)
     if (m) {

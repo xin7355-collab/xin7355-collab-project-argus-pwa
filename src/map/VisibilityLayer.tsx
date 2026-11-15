@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import { useTacticalStore } from '../store/tacticalStore'
+import { errText } from '../lib/feedState'
 import { fetchVisibilityGrid, classifyVisibility } from '../lib/visibility'
 
 /**
@@ -33,9 +34,27 @@ export function VisibilityLayer({ map }: { map: L.Map }) {
           pts.push([lat, lng])
         }
       setStatus('能見度：載入即時霧況…')
-      const vis = await fetchVisibilityGrid(pts).catch(() => [] as (number | null)[])
+      const { setFeed } = useTacticalStore.getState()
+      setFeed('visibility', 'loading', '載入即時霧況…')
+      let vis: (number | null)[]
+      try {
+        vis = await fetchVisibilityGrid(pts)
+      } catch (e) {
+        if (cancelled || myGen !== gen) return
+        const why = `抓不到能見度資料（${errText(e)}）`
+        setFeed('visibility', 'error', why)
+        setStatus(`⚠ 能見度：${why}。這不代表能見度良好`)
+        return
+      }
       if (cancelled || myGen !== gen || !groupRef.current) return
       group.clearLayers()
+      const got = vis.filter((v) => v != null).length
+      if (got === 0) {
+        // 以前這裡會照樣說「目前視野內大致良好」——一點資料都沒有卻報平安，最危險
+        setFeed('visibility', 'error', '沒拿到任何一點的能見度')
+        setStatus('⚠ 能見度：沒拿到任何一點的資料，這不代表能見度良好。稍後再開一次')
+        return
+      }
       const hLat = (b.getNorth() - b.getSouth()) / rows / 2
       const hLng = (b.getEast() - b.getWest()) / cols / 2
       let foggy = 0
@@ -55,10 +74,12 @@ export function VisibilityLayer({ map }: { map: L.Map }) {
           .bindPopup(`<b style="color:${cls.color}">能見度 ${cls.label}</b><br/>約 ${(v / 1000).toFixed(1)} km｜目視/瞭望偵蒐距離的上限`)
           .addTo(group)
       })
+      const partial = got < pts.length ? `（${pts.length - got} 格沒資料，不上色不代表良好）` : ''
+      setFeed('visibility', got < pts.length ? 'stale' : 'ok', `畫面內 ${got}／${pts.length} 格有資料${foggy > 0 ? `，${foggy} 格低能見` : ''}`)
       setStatus(
         foggy > 0
-          ? `能見度：⚠ ${foggy} 區低能見(<4km)——霧區非法越界/可疑運輸易鑽，倚重雷達/AIS`
-          : '能見度：目前視野內大致良好（>10km 不上色）',
+          ? `能見度：⚠ ${foggy} 區低能見(<4km)——霧區非法越界/可疑運輸易鑽，倚重雷達/AIS${partial}`
+          : `能見度：有資料的格子大致良好（>10km 不上色）${partial}`,
       )
     }
 

@@ -29,6 +29,12 @@ declare module 'node:assert/strict' {
     match(value: string, regexp: RegExp, message?: string): void
     doesNotMatch(value: string, regexp: RegExp, message?: string): void
     throws(fn: () => unknown, expected?: RegExp | string, message?: string): void
+    /** Promise 要被拒絕；validate 回 true 代表錯誤是預期的那種。 */
+    rejects(
+      promiseOrFn: Promise<unknown> | (() => Promise<unknown>),
+      expected?: RegExp | ((err: unknown) => boolean),
+      message?: string,
+    ): Promise<void>
     doesNotThrow(fn: () => unknown, message?: string): void
     fail(message?: string): never
   }

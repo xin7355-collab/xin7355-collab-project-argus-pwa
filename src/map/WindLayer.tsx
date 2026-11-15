@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import { useTacticalStore } from '../store/tacticalStore'
+import { errText } from '../lib/feedState'
 import { fetchEnvGrid } from '../lib/marineEnv'
 
 /**
@@ -33,17 +34,39 @@ export function WindLayer({ map }: { map: L.Map }) {
           pts.push([lat, lng])
         }
       setStatus('風場：載入即時風向風速…')
-      const env = await fetchEnvGrid(pts).catch(() => [])
+      const { setFeed } = useTacticalStore.getState()
+      setFeed('wind', 'loading', '載入即時風向風速…')
+      let env: Awaited<ReturnType<typeof fetchEnvGrid>>
+      try {
+        env = await fetchEnvGrid(pts)
+      } catch (e) {
+        if (cancelled || myGen !== gen) return
+        // 以前失敗時什麼都不畫、卻照樣說「即時風向風速」，看起來像海上無風
+        const why = `抓不到 Open-Meteo 風場資料（${errText(e)}）`
+        setFeed('wind', 'error', why)
+        setStatus(`⚠ 風場：${why}。這不代表沒有風，稍後再開一次`)
+        return
+      }
       if (cancelled || myGen !== gen || !groupRef.current) return
       group.clearLayers()
       const spanKm = (b.getNorth() - b.getSouth()) * 111
       const base = Math.max(1500, (spanKm / rows) * 1000 * 0.32) // 依縮放調整箭頭長度
+      let drawn = 0
       pts.forEach((p, i) => {
         const e = env[i]
-        if (!e) return
+        // live=false 是連不上時的預設值（固定 6 m/s 西南風），畫出來就是一整片假風——不畫
+        if (!e || !e.live) return
+        drawn++
         // windDir 為「來向」；+180 = 去向（箭頭指向風吹去的方向）
         drawArrow(group, p[0], p[1], (e.windDir + 180) % 360, base + e.windSpeed * base * 0.12, '#22d3ee')
       })
+      if (drawn === 0) {
+        // fetchEnvGrid 連不上時不丟錯、回固定預設值；以前這裡會畫一整片同方向的假箭頭還說是即時
+        setFeed('wind', 'error', '連不上 Open-Meteo，沒有即時風場')
+        setStatus('⚠ 風場：連不上 Open-Meteo，沒有即時風場。這不代表沒有風，稍後再開一次')
+        return
+      }
+      setFeed('wind', drawn < pts.length ? 'stale' : 'ok', `畫面內 ${drawn}／${pts.length} 點有資料（Open-Meteo）`)
       setStatus('風場：即時風向風速（Open-Meteo）。箭頭＝風吹去的方向')
     }
 

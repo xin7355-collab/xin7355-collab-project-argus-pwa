@@ -4,6 +4,7 @@ import { useTacticalStore } from '../store/tacticalStore'
 import { WIND_FARMS, MEDIAN_LINE, PORTS, RESTRICTED_ZONES, ENFORCEMENT_LINES, SHOALS } from '../lib/maritimeRef'
 import { fetchWindFarmsOsm, type OsmWindFarm } from '../lib/windfarmOsm'
 import { fetchFairways, fetchCables, fetchShoals } from '../lib/osmMaritime'
+import { errText } from '../lib/feedState'
 
 /**
  * 離岸風電場圖層（跨模式）：由圖層視窗打勾開啟。畫各離岸風電場示意範圍圈＋風機標記，
@@ -95,15 +96,24 @@ export function WindFarmLayer({ map }: { map: L.Map }) {
     // 1) 先畫內建示意（即時可見）
     drawApproxWindFarms(g)
     // 2) 再抓 OSM 精準邊界取代（合併：精準＋中文＋向量常駐）
+    useTacticalStore.getState().setFeed('windFarms', 'loading', '抓 OSM 精準邊界中，先顯示內建示意')
     fetchWindFarmsOsm()
       .then((farms) => {
-        if (cancelled || !groupRef.current || !farms.length) return
+        if (cancelled || !groupRef.current) return
+        if (!farms.length) {
+          useTacticalStore.getState().setFeed('windFarms', 'fallback', 'OSM 這一帶沒有風場邊界，顯示內建示意範圍')
+          return
+        }
         g.clearLayers()
         drawOsmWindFarms(g, farms)
+        useTacticalStore.getState().setFeed('windFarms', 'ok', `${farms.length} 座 OSM 精準邊界`)
         setStatus(`離岸風電場：已載入 ${farms.length} 座 OSM 精準邊界（中文對照）`)
       })
-      .catch(() => {
-        /* 保留內建示意 */
+      .catch((e) => {
+        // 伺服器都連不上：保留內建示意，但講清楚不是「這裡沒有」
+        if (cancelled) return
+        useTacticalStore.getState().setFeed('windFarms', 'fallback', `內建示意範圍（${errText(e)}）`)
+        setStatus(`離岸風電場：先顯示內建示意範圍。${errText(e, '')}`)
       })
     return () => {
       cancelled = true
@@ -171,6 +181,7 @@ export function RainRadarLayer({ map }: { map: L.Map }) {
       }
     }
     setStatus('即時降雨雷達：載入中…')
+    useTacticalStore.getState().setFeed('rainRadar', 'loading', '載入中…')
     fetch('https://api.rainviewer.com/public/weather-maps.json')
       .then((r) => r.json())
       .then((data: { host: string; radar?: { past?: { path: string }[]; nowcast?: { path: string }[] } }) => {
@@ -178,6 +189,7 @@ export function RainRadarLayer({ map }: { map: L.Map }) {
         const frames = [...(data.radar?.past ?? []), ...(data.radar?.nowcast ?? [])]
         const last = frames[frames.length - 1]
         if (!last) {
+          useTacticalStore.getState().setFeed('rainRadar', 'empty', 'RainViewer 目前沒有影格')
           setStatus('即時降雨雷達：目前無資料')
           return
         }
@@ -185,10 +197,13 @@ export function RainRadarLayer({ map }: { map: L.Map }) {
         const tl = L.tileLayer(url, { opacity: 0.6, maxZoom: 19, attribution: '降雨雷達 © RainViewer' })
         tl.addTo(map)
         layerRef.current = tl
+        useTacticalStore.getState().setFeed('rainRadar', 'ok', 'RainViewer 最新一格')
         setStatus('即時降雨雷達（RainViewer）：藍→綠→黃→紅 雨勢增強')
       })
-      .catch(() => {
-        if (!cancelled) setStatus('⚠ 降雨雷達載入失敗')
+      .catch((e) => {
+        if (cancelled) return
+        useTacticalStore.getState().setFeed('rainRadar', 'error', `RainViewer 連不上（${errText(e)}）`)
+        setStatus('⚠ 降雨雷達：RainViewer 連不上，這不代表沒有下雨。稍後再開一次')
       })
     return () => {
       cancelled = true
@@ -305,10 +320,12 @@ export function FairwayLayer({ map }: { map: L.Map }) {
     groupRef.current = g
     let cancelled = false
     setStatus('航道：載入 OSM 航道／分道通航中…')
+    useTacticalStore.getState().setFeed('fairway', 'loading', '載入 OSM 航道中…')
     fetchFairways()
       .then((fs) => {
         if (cancelled || !groupRef.current) return
         if (!fs.length) {
+          useTacticalStore.getState().setFeed('fairway', 'empty', 'OSM 這一帶沒有標航道')
           setStatus('航道：此區 OSM 無標定資料')
           return
         }
@@ -317,10 +334,13 @@ export function FairwayLayer({ map }: { map: L.Map }) {
           line.bindPopup(`<b style="color:#38bdf8">🚢 ${f.name || '航道 / 分道通航'}</b><br/>來源：OpenStreetMap`)
           line.addTo(g)
         }
+        useTacticalStore.getState().setFeed('fairway', 'ok', `${fs.length} 條（OSM）`)
         setStatus(`航道：已載入 ${fs.length} 條（OSM）`)
       })
-      .catch(() => {
-        if (!cancelled) setStatus('⚠ 航道載入失敗')
+      .catch((e) => {
+        if (cancelled) return
+        useTacticalStore.getState().setFeed('fairway', 'error', errText(e))
+        setStatus(`⚠ 航道：${errText(e)}`)
       })
     return () => {
       cancelled = true
@@ -348,10 +368,12 @@ export function CableLayer({ map }: { map: L.Map }) {
     groupRef.current = g
     let cancelled = false
     setStatus('海底電纜：載入 OSM 電纜路由中…')
+    useTacticalStore.getState().setFeed('cable', 'loading', '載入 OSM 電纜路由中…')
     fetchCables()
       .then((fs) => {
         if (cancelled || !groupRef.current) return
         if (!fs.length) {
+          useTacticalStore.getState().setFeed('cable', 'empty', 'OSM 這一帶沒有標電纜（位置多不公開）')
           setStatus('海底電纜：此區 OSM 無標定資料（電纜位置多不公開）')
           return
         }
@@ -363,10 +385,13 @@ export function CableLayer({ map }: { map: L.Map }) {
             )
             .addTo(g)
         }
+        useTacticalStore.getState().setFeed('cable', 'ok', `${fs.length} 條（OSM）`)
         setStatus(`海底電纜：已載入 ${fs.length} 條（OSM）`)
       })
-      .catch(() => {
-        if (!cancelled) setStatus('⚠ 海底電纜載入失敗')
+      .catch((e) => {
+        if (cancelled) return
+        useTacticalStore.getState().setFeed('cable', 'error', errText(e))
+        setStatus(`⚠ 海底電纜：${errText(e)}`)
       })
     return () => {
       cancelled = true
@@ -418,9 +443,14 @@ export function ShoalLayer({ map }: { map: L.Map }) {
     groupRef.current = g
     let cancelled = false
     drawApproxShoals(g)
+    useTacticalStore.getState().setFeed('shoal', 'loading', '抓 OSM 精準範圍中，先顯示內建示意')
     fetchShoals()
       .then((fs) => {
-        if (cancelled || !groupRef.current || !fs.length) return
+        if (cancelled || !groupRef.current) return
+        if (!fs.length) {
+          useTacticalStore.getState().setFeed('shoal', 'fallback', 'OSM 這一帶沒有標沙洲，顯示內建示意範圍')
+          return
+        }
         g.clearLayers()
         for (const f of fs) {
           const style = { color: '#ca8a04', weight: 1.5, opacity: 0.8, fillColor: '#eab308', fillOpacity: 0.22 }
@@ -428,10 +458,14 @@ export function ShoalLayer({ map }: { map: L.Map }) {
           shape.bindPopup(`<b style="color:#ca8a04">🏖️ ${f.name || '沙洲／淺灘'}</b><br/>擱淺危險（會隨潮汐堆積移動）<br/><span style="color:#94a3b8;font-size:11px">來源：OpenStreetMap</span>`)
           shape.addTo(g)
         }
+        useTacticalStore.getState().setFeed('shoal', 'ok', `${fs.length} 處 OSM 精準範圍`)
         setStatus(`沙洲／淺灘：已載入 ${fs.length} 處 OSM 精準範圍`)
       })
-      .catch(() => {
-        /* 保留內建示意 */
+      .catch((e) => {
+        // 伺服器都連不上：保留內建示意，但講清楚不是「這裡沒有」
+        if (cancelled) return
+        useTacticalStore.getState().setFeed('shoal', 'fallback', `內建示意範圍（${errText(e)}）`)
+        setStatus(`沙洲／淺灘：先顯示內建示意範圍。${errText(e, '')}`)
       })
     return () => {
       cancelled = true
