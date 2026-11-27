@@ -45,6 +45,12 @@ export const LAYERS = [
   { slug: 'national_park', service: 'Hosted/National_Park_fs/FeatureServer/0', kind: 'park', min: 5 },
 ]
 const PAGE = 1000
+/**
+ * 直連民航局的時間預算：實測整批約 50 秒。超過 5 分鐘就放棄、改用鏡像。
+ * 沒有這個上限時，對方卡住（每次等 120 秒、每頁重試 4 次）會拖過工作流的 15 分鐘上限，
+ * 連改用鏡像的機會都沒有。
+ */
+const CAA_BUDGET_MS = Number(process.env.CAA_BUDGET_MS) || 5 * 60_000
 /** 某層比上一版少這麼多就當作抓到一半（上一版至少 20 筆才比）。 */
 const MAX_DROP = 0.3
 
@@ -55,6 +61,8 @@ const errCode = (e) => e?.cause?.code || e?.code || e?.message || String(e)
 // ── 連線：照常驗證；缺中繼憑證時照 AIA 補上 ─────────────────────────────
 
 let extraCa = null
+/** 直連民航局的截止時間（毫秒）；0＝不限（鏡像、AIA 不受這個限制）。 */
+let caaDeadline = 0
 const CERT_ERRORS = new Set([
   'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
   'UNABLE_TO_GET_ISSUER_CERT',
@@ -62,23 +70,33 @@ const CERT_ERRORS = new Set([
   'SELF_SIGNED_CERT_IN_CHAIN',
 ])
 
-function request(url, { ca = null, accept = 'application/json' } = {}) {
+function request(url, { ca = null, accept = 'application/json', maxMs = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url)
     const mod = u.protocol === 'https:' ? https : http
     const opts = { headers: { 'user-agent': UA, accept }, timeout: 120_000 }
     if (ca) opts.ca = [...tls.rootCertificates, ...ca]
+    let hard
     const req = mod.get(u, opts, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume()
-        resolve(request(new URL(res.headers.location, u).toString(), { ca, accept }))
+        clearTimeout(hard)
+        resolve(request(new URL(res.headers.location, u).toString(), { ca, accept, maxMs }))
         return
       }
       const parts = []
       res.on('data', (d) => parts.push(d))
-      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(parts) }))
+      res.on('end', () => {
+        clearTimeout(hard)
+        resolve({ status: res.statusCode, body: Buffer.concat(parts) })
+      })
     })
-    req.on('error', reject)
+    // timeout 只管「多久沒收到東西」；對方一點一點慢慢送時要靠這個總時限
+    if (maxMs > 0) hard = setTimeout(() => req.destroy(Object.assign(new Error('超過時間預算'), { code: 'BUDGET' })), maxMs)
+    req.on('error', (e) => {
+      clearTimeout(hard)
+      reject(e)
+    })
     req.on('timeout', () => req.destroy(Object.assign(new Error('逾時'), { code: 'TIMEOUT' })))
   })
 }
@@ -117,8 +135,10 @@ async function getJson(url) {
   let last
   for (let attempt = 0; attempt < 4; attempt++) {
     if (attempt) await sleep(2 ** attempt * 1000)
+    const left = caaDeadline ? caaDeadline - Date.now() : 0
+    if (caaDeadline && left <= 0) throw Object.assign(new Error(`直連民航局超過 ${CAA_BUDGET_MS / 60_000} 分鐘的時間預算`), { code: 'BUDGET' })
     try {
-      const r = await request(url, { ca: extraCa })
+      const r = await request(url, { ca: extraCa, maxMs: left })
       if (r.status !== 200) throw Object.assign(new Error(`HTTP ${r.status}`), { code: `HTTP_${r.status}` })
       const j = JSON.parse(r.body.toString('utf8'))
       if (j && j.error) throw new Error(`ArcGIS 錯誤：${JSON.stringify(j.error).slice(0, 200)}`)
@@ -130,7 +150,7 @@ async function getJson(url) {
         attempt-- // 補好憑證重試不算一次
         continue
       }
-      if (CERT_ERRORS.has(e.code)) break // 補了還是驗不過：不要硬試
+      if (CERT_ERRORS.has(e.code) || e.code === 'BUDGET') break // 補了還是驗不過、時間用完：不要硬試
     }
   }
   throw last
@@ -304,14 +324,17 @@ async function build(args) {
     if (mode === 'auto' || mode === 'caa') {
       try {
         log('直連民航局 GIS…')
+        caaDeadline = Date.now() + CAA_BUDGET_MS
         collections = {}
         for (const layer of LAYERS) {
           collections[layer.slug] = await fetchCaaLayer(layer)
           log(`  ${layer.slug}：${collections[layer.slug].length} 筆`)
         }
         source = { kind: 'caa', fetchedAt: new Date().toISOString() }
+        caaDeadline = 0
       } catch (e) {
-        caaError = errCode(e)
+        caaDeadline = 0
+        caaError = e?.code === 'BUDGET' ? e.message : errCode(e)
         collections = null
         log(`  民航局直連失敗：${caaError}`)
         if (mode === 'caa') throw new Error(`民航局 GIS 抓不到：${caaError}`)
