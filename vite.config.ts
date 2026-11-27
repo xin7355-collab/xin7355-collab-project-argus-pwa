@@ -66,12 +66,34 @@ export default defineConfig({
       workbox: {
         // 3D 地球（Cesium，第一次開實測下載壓縮後約 2.2 MB）不放進離線快取：手機裝 App 時不該被迫下載一個多半用不到的大檔。
         // 要開 3D 地球本來就要連網（衛星圖磚、飛機資料）。cesiumEngine 是 GlobeView 延遲載入的那一包。
-        globIgnores: ['cesium/**', 'assets/cesiumEngine-*'],
+        // 無人機禁限航區圖磚（全台約 4.6 MB）也不預載：只抓看過的那幾格，下面的 runtimeCaching 留著離線用。
+        globIgnores: ['cesium/**', 'assets/cesiumEngine-*', 'drone/**'],
         // 更新時清掉舊版快取，避免半新半舊導致白畫面 / 壞掉。
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
         runtimeCaching: [
+          // 無人機禁限航區：索引先問網路（每天可能有新版），4 秒沒回就用快取的（海上訊號差）；
+          // 圖磚網址帶版本號，版本一樣內容就一樣，直接用快取。看過的地方沒訊號也查得到。
+          {
+            urlPattern: /\/drone\/index\.json$/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'drone-index-v1',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 2 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
+            urlPattern: /\/drone\/tiles\/[^/]+\.json\?v=/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'drone-tiles-v1',
+              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 60 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
           {
             urlPattern: /^https:\/\/server\.arcgisonline\.com\/ArcGIS\/rest\/services\/Canvas\/.*/i,
             handler: 'CacheFirst',

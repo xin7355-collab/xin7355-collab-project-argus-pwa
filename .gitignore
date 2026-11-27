@@ -19,3 +19,6 @@ dist-before/
 
 # wrangler 本機開發狀態（miniflare 的 sqlite/暫存 bundle），不該進版控
 .wrangler/
+
+# 無人機禁限航區資料：部署時從 Release 下載（見 deploy.yml），不進版控
+public/drone/

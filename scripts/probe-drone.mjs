@@ -5,6 +5,7 @@
 // 2. GitHub 上的每日鏡像（民航局擋掉時的備援）：最新版本與筆數。
 // 3. Open-Meteo：10／80／120 公尺風、陣風、降雨、能見度欄位都在不在。
 // 4. NOAA SWPC 地磁 Kp：格式與 CORS。
+// 5. 部署後本站 /drone/ 的資料：版本、筆數、桃園機場那一格、圖磚裡沒有 Email、缺檔回 404 not_ready。
 // 只用公開地標（桃園國際機場）；不讀任何 Secret；紀錄只印結構與數量。
 import tls from 'node:tls'
 import https from 'node:https'
@@ -177,4 +178,31 @@ for (const u of [
   } catch (e) {
     line(`❌ ${u.split('/').pop()}：${errCode(e)}`)
   }
+}
+
+line()
+line('== 5. 部署後的禁限航區資料（本站 /drone/）==')
+const SITE = process.env.SITE_URL || 'https://argus-app.xin7355.workers.dev'
+try {
+  const r = await fetch(`${SITE}/drone/index.json`, { signal: AbortSignal.timeout(30000) })
+  if (r.status === 404) {
+    const j = await r.json().catch(() => null)
+    line(`⚪ 還沒有資料（HTTP 404 ${j?.code ?? ''}）：先跑「無人機禁限航區資料」工作流`)
+  } else {
+    const idx = await r.json()
+    line(`✅ 版本 ${idx.version}；來源 ${idx.source?.kind}${idx.source?.tag ? `（${idx.source.tag}）` : ''}；同步 ${idx.source?.fetchedAt}`)
+    line(`   筆數 ${JSON.stringify(idx.counts)}；${idx.cells?.length} 格、總覽 ${idx.overview} 筆`)
+    const cell = '50_242' // 桃園國際機場所在的格子
+    const t = await fetch(`${SITE}/drone/tiles/${cell}.json?v=${idx.version}`, { signal: AbortSignal.timeout(30000) })
+    const tj = await t.json()
+    const names = tj.zones.map((z) => z.name)
+    line(`✅ 圖磚 ${cell}：HTTP ${t.status}，${tj.zones.length} 筆；有桃園機場禁止施放範圍：${names.some((n) => n.includes('桃園國際機場禁止施放')) ? '是' : '否'}`)
+    const leak = JSON.stringify(tj).match(/[\w.+-]+@[\w-]+\.[\w.]+/)
+    line(`${leak ? '❌ 圖磚裡有 Email！' : '✅ 圖磚裡沒有 Email（聯絡方式沒帶出去）'}`)
+  }
+  const miss = await fetch(`${SITE}/drone/tiles/nope.json`, { signal: AbortSignal.timeout(30000) })
+  const mj = await miss.json().catch(() => null)
+  line(`${miss.status === 404 && mj?.code === 'not_ready' ? '✅' : '❌'} 不存在的圖磚 → HTTP ${miss.status} ${mj?.code ?? '（不是 JSON）'}`)
+} catch (e) {
+  line(`❌ ${errCode(e)}`)
 }

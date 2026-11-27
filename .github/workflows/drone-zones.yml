@@ -1,0 +1,62 @@
+# 無人機禁限航區資料：每天從民航局 GIS 同步（抓不到改用 GitHub 每日鏡像），
+# 整理成小圖磚放進 Release「drone-zones」的附件（不進 git 歷史），資料有變才觸發部署。
+# 部署工作流（deploy.yml）會把附件解開放進網站的 /drone/。
+#
+# 「還沒變」安靜結束；兩個來源都抓不到、或筆數驟減（多半抓到一半）→ 這個工作流失敗（紅燈），
+# 網站上的資料維持上一版，不會被空資料蓋掉。
+name: 無人機禁限航區資料
+on:
+  schedule:
+    # 台灣時間每天 01:23（鏡像在 00:00 更新之後；避開整點的排程高峰）
+    - cron: '23 17 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write # 更新 Release 附件
+  actions: write # 觸發部署
+concurrency:
+  group: drone-zones
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: 自我測試（離線）
+        run: node --experimental-strip-types scripts/drone-zones.mjs selftest
+
+      - name: 拿上一版的索引（比筆數、看有沒有變）
+        run: |
+          mkdir -p "$RUNNER_TEMP/prev"
+          if gh release download drone-zones -p index.json -D "$RUNNER_TEMP/prev" --clobber 2>/dev/null; then
+            echo "有上一版"
+          else
+            echo "還沒有上一版（第一次跑）"
+          fi
+
+      - name: 同步並整理
+        run: node --experimental-strip-types scripts/drone-zones.mjs build --out "$RUNNER_TEMP/drone" --previous "$RUNNER_TEMP/prev/index.json"
+
+      - name: 有變才發布並觸發部署
+        run: |
+          ver() { node -e 'try{console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).version)}catch{console.log("none")}' "$1"; }
+          new=$(ver "$RUNNER_TEMP/drone/index.json")
+          old=$(ver "$RUNNER_TEMP/prev/index.json")
+          if [ "$new" = "$old" ]; then
+            echo "資料沒變（$new），不用更新。"
+            exit 0
+          fi
+          tar -czf "$RUNNER_TEMP/drone-zones.tgz" -C "$RUNNER_TEMP/drone" .
+          if ! gh release view drone-zones >/dev/null 2>&1; then
+            # 不設成「最新版」：這是資料快照，不是 App 的版本
+            gh release create drone-zones --title "drone-zones" --notes "自動產生的資料快照（每日同步）。" --latest=false
+          fi
+          gh release upload drone-zones "$RUNNER_TEMP/drone-zones.tgz" "$RUNNER_TEMP/drone/index.json" --clobber
+          echo "已更新 $old → $new，觸發部署。"
+          gh workflow run deploy.yml --ref main

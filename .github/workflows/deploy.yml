@@ -139,6 +139,34 @@ jobs:
       - name: 安裝相依（照 lockfile，不動版本）
         run: npm ci
 
+      # 無人機禁限航區資料放在 Release「drone-zones」的附件（drone-zones.yml 每天更新），不進 git 歷史。
+      # 還沒有這個 Release（同步工作流還沒跑過）→ 安靜跳過，App 顯示「還沒準備好」。
+      # 有 Release 但下載失敗 → 重試，再不行就警告、照常部署（App 會顯示讀不到的紅燈，重跑部署即可）。
+      - name: 下載無人機禁限航區資料
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p public/drone
+          if ! out=$(gh release view drone-zones --json tagName 2>&1); then
+            if echo "$out" | grep -qi "not found"; then
+              echo "還沒有無人機禁限航區資料（「無人機禁限航區資料」工作流還沒跑過），這次部署先不帶。"
+            else
+              echo "::warning::查不到無人機禁限航區資料的 Release，這次部署沒有帶到；App 會顯示讀不到，重跑部署即可"
+            fi
+            exit 0
+          fi
+          ok=""
+          for d in 0 2 4 8 16; do
+            [ "$d" -gt 0 ] && sleep "$d"
+            if gh release download drone-zones -p drone-zones.tgz -D "$RUNNER_TEMP" --clobber; then ok=1; break; fi
+          done
+          if [ -z "$ok" ]; then
+            echo "::warning::無人機禁限航區資料下載失敗，這次部署沒有帶到；App 會顯示讀不到，重跑部署即可"
+            exit 0
+          fi
+          tar -xzf "$RUNNER_TEMP/drone-zones.tgz" -C public/drone
+          node -e 'const i=require("./public/drone/index.json");console.log(`無人機禁限航區資料 ${i.version}：主空域 ${i.counts.airspace} 筆，來源 ${i.source.kind}，${i.cells.length} 格`)'
+
       - name: 型別檢查與建置
         run: npm run build
         env:

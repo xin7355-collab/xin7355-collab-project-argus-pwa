@@ -63,9 +63,10 @@ export function Launcher() {
   const poiPoints = useTacticalStore((s) => s.poiPoints)
   const showAircraft = useTacticalStore((s) => s.showAircraft)
   const showGnss = useTacticalStore((s) => s.showGnss)
+  const showDroneZones = useTacticalStore((s) => s.showDroneZones)
   const groups = visibleGroups({ radarLocked })
   // 開關型的格子：開著時亮綠框、角落標「開」，不然看不出按了有沒有效
-  const toggles: Record<string, boolean> = { aircraft: showAircraft, gnss: showGnss }
+  const toggles: Record<string, boolean> = { aircraft: showAircraft, gnss: showGnss, drone: showDroneZones }
   // 桌機功能在手機、平板上標「桌機」（電腦上不標，免得看起來像少了什麼）
   const onDesktop = useMemo(() => classifyDevice(readDeviceFacts()).kind === 'desktop', [])
 

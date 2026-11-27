@@ -24,6 +24,8 @@ export function LayerManager() {
   const setShowAircraft = useTacticalStore((s) => s.setShowAircraft)
   const showGnss = useTacticalStore((s) => s.showGnss)
   const setShowGnss = useTacticalStore((s) => s.setShowGnss)
+  const showDroneZones = useTacticalStore((s) => s.showDroneZones)
+  const setShowDroneZones = useTacticalStore((s) => s.setShowDroneZones)
   const showVisibility = useTacticalStore((s) => s.showVisibility)
   const setShowVisibility = useTacticalStore((s) => s.setShowVisibility)
   const showRestricted = useTacticalStore((s) => s.showRestricted)
@@ -68,6 +70,7 @@ export function LayerManager() {
     (showRainRadar ? 1 : 0) +
     (showAircraft ? 1 : 0) +
     (showGnss ? 1 : 0) +
+    (showDroneZones ? 1 : 0) +
     (showVisibility ? 1 : 0) +
     (showRestricted ? 1 : 0) +
     (showEnforceLine ? 1 : 0) +
@@ -215,6 +218,13 @@ export function LayerManager() {
                     sub="用飛機回報的定位精度畫 0.5° 格子（gpsjam 算法）：黃＝2–10%、紅＝>10% 飛機精度變差。是推估，不是直接量到干擾"
                     checked={showGnss}
                     onToggle={() => setShowGnss(!showGnss)}
+                  />
+                  <LayerCheck
+                    label="🛸 無人機禁限航區（民航局）"
+                    feed={feeds.drone}
+                    sub="紅＝禁止、黃＝有條件（限高、限時、要申請）、綠虛線＝國家公園；縮小時只畫機場、限航區、商港、國家公園。僅供參考，以民航局公告為準"
+                    checked={showDroneZones}
+                    onToggle={() => setShowDroneZones(!showDroneZones)}
                   />
                 </div>
               </div>

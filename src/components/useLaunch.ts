@@ -57,6 +57,13 @@ export function launch(item: LaunchItem) {
       st.setStatus(on ? '📵 GPS 干擾：開始累積飛機定位精度，每格至少 3 架才判斷（燈號在 🗂️ 圖層）' : '📵 GPS 干擾：已關閉')
       return
     }
+    // 無人機：打開禁限航區圖層，檢查位置從 GPS（沒有就用畫面中心）開始；抽屜收起來讓出地圖，點地圖換位置
+    case 'drone':
+      st.setShowDroneZones(true)
+      st.setDroneTarget(st.ownPosition ? { lat: st.ownPosition.lat, lng: st.ownPosition.lng } : { lat: st.mapView.lat, lng: st.mapView.lng })
+      st.setSheetSnap('peek')
+      st.setOpenTool('drone')
+      return
     case 'share': {
       // 要在點擊當下就呼叫分享選單（iOS 要求使用者手勢），所以不先做任何 await
       const v = st.mapView

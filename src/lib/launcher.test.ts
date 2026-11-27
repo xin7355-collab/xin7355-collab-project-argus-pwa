@@ -9,7 +9,7 @@ const ALL_MODES = TACTICAL_MODES.filter((m) => m !== 'basic')
 // 跟 App.tsx 掛載的工具面板（openTool）同步。
 const ALL_TOOLS = [
   'layers', 'coord', 'measure', 'rings', 'intercept', 'dr', 'fieldops',
-  'nightops', 'radio', 'lookout', 'radar', 'microwave', 'offline', 'assistant',
+  'nightops', 'radio', 'lookout', 'radar', 'microwave', 'offline', 'assistant', 'drone',
 ]
 
 const all = GROUPS.flatMap((g) => g.items)

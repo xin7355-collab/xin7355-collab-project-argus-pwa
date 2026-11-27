@@ -11,7 +11,8 @@
  * 後來加了第二件：**幫瀏覽器代連 aisstream.io 的 AIS 即時船位**（/api/ais）。
  *
  * 之後陸續加了：氣象署代理（/api/cwa）、飛機 ADS-B 代理（/api/adsb，見 adsb.js）、
- * 給 Claude 等 AI 助理用的 MCP 伺服器（/mcp，見 mcp.js）、語音助理（/api/ai，見 ai.js）。
+ * 給 Claude 等 AI 助理用的 MCP 伺服器（/mcp，見 mcp.js）、語音助理（/api/ai，見 ai.js）、
+ * 無人機禁限航區靜態資料（/drone/，見 drone.js）。
  *
  * 其餘所有路徑原封不動交給靜態資源處理，行為跟改之前一樣。
  */
@@ -20,6 +21,7 @@ import { json, withCors, originAllowed } from './http.js'
 import { proxyAdsb } from './adsb.js'
 import { handleMcp } from './mcp.js'
 import { handleAi } from './ai.js'
+import { serveDrone } from './drone.js'
 
 /**
  * 只准代理這幾個 celestrak 群組。
@@ -223,6 +225,9 @@ export default {
     if (url.pathname.startsWith('/api/')) {
       return json({ error: '沒有這個 API' }, 404)
     }
+
+    // 無人機禁限航區資料（靜態檔；缺檔回 404 not_ready，不要被 SPA 模式換成 index.html）
+    if (url.pathname.startsWith('/drone/')) return serveDrone(request, env)
 
     // 其餘一律照舊交給靜態資源（含 SPA 的 not_found_handling）。
     return env.ASSETS.fetch(request)

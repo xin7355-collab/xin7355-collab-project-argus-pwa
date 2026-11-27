@@ -258,6 +258,10 @@ interface TacticalState {
   showAircraft: boolean
   /** GPS 干擾推估（用飛機回報的定位精度，見 lib/gnssIntegrity）。 */
   showGnss: boolean
+  /** 無人機禁限航區（民航局圖資，見 lib/droneZones）。 */
+  showDroneZones: boolean
+  /** 🛸 面板正在檢查的位置（點地圖換）；面板關著時沒有用。 */
+  droneTarget: { lat: number; lng: number } | null
   /** 能見度/霧況（Open-Meteo）。 */
   showVisibility: boolean
   /** 金馬外離島禁／限制水域（示意）。 */
@@ -466,6 +470,8 @@ interface TacticalState {
   setShowRainRadar: (v: boolean) => void
   setShowAircraft: (v: boolean) => void
   setShowGnss: (v: boolean) => void
+  setShowDroneZones: (v: boolean) => void
+  setDroneTarget: (p: { lat: number; lng: number } | null) => void
   setShowVisibility: (v: boolean) => void
   setShowRestricted: (v: boolean) => void
   setShowEnforceLine: (v: boolean) => void
@@ -657,6 +663,8 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   showRainRadar: false,
   showAircraft: false,
   showGnss: false,
+  showDroneZones: false,
+  droneTarget: null,
   showVisibility: false,
   showRestricted: false,
   showEnforceLine: false,
@@ -910,6 +918,8 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
   setShowRainRadar: (v) => set({ showRainRadar: v }),
   setShowAircraft: (v) => set({ showAircraft: v }),
   setShowGnss: (v) => set({ showGnss: v }),
+  setShowDroneZones: (v) => set({ showDroneZones: v }),
+  setDroneTarget: (p) => set({ droneTarget: p }),
   setShowVisibility: (v) => set({ showVisibility: v }),
   setShowRestricted: (v) => set({ showRestricted: v }),
   setShowEnforceLine: (v) => set({ showEnforceLine: v }),
@@ -928,6 +938,7 @@ export const useTacticalStore = create<TacticalState>((set, get) => ({
       showRainRadar: false,
       showAircraft: false,
       showGnss: false,
+      showDroneZones: false,
       showVisibility: false,
       showRestricted: false,
       showEnforceLine: false,
