@@ -1,0 +1,17 @@
+# 探測無人機功能的外部來源（手動觸發）：民航局 GIS、GitHub 每日鏡像、Open-Meteo、NOAA 地磁 Kp。
+# 只用公開地標座標、不讀任何 Secret；紀錄只印結構與數量（公開 repo 的紀錄是公開的）。
+name: 探測無人機資料來源
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: node scripts/probe-drone.mjs
